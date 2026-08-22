@@ -13,3 +13,24 @@ export const API_BASE: string = ((import.meta as any).env?.VITE_API_BASE_URL || 
 export function apiUrl(path: string): string {
   return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 }
+
+/**
+ * Parse a fetch Response as JSON, but fail with a clear, actionable message
+ * instead of the cryptic "Unexpected token '<', "<!doctype "... is not valid
+ * JSON" you get from calling res.json() on an HTML page. That HTML shows up
+ * whenever this app's own /api/... endpoint is hit with no real server behind
+ * it — e.g. the packaged Android app's WebView answers any unknown path with
+ * index.html instead of a 404.
+ */
+export async function parseJsonResponse(res: Response): Promise<any> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      res.ok
+        ? "Server returned an unexpected non-JSON response."
+        : `No AI server reachable at "${API_BASE || "(same origin)"}" (HTTP ${res.status}). Enter your own API key above instead of relying on the server default, or set VITE_API_BASE_URL if you're running the packaged app.`
+    );
+  }
+}

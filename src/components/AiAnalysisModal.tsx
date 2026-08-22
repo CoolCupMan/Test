@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 import { AiCredentials, AiMatchResult, AiProvider } from "../types";
 import { runLocalAiAnalysis } from "../lib/localAiEngine";
-import { apiUrl } from "../lib/apiBase";
+import { apiUrl, parseJsonResponse } from "../lib/apiBase";
+import { analyzeWithProviderDirect } from "../lib/aiProviders";
 
 import { UserAccount } from "./AuthModal";
 
@@ -146,8 +147,6 @@ export const AiAnalysisModal: React.FC<AiAnalysisModalProps> = ({
 
         sampleLines.sort((a, b) => a.lineNumber - b.lineNumber);
 
-        setProgressText(`Sending AI analysis request to ${provider.toUpperCase()} server...`);
-
         const apiKey =
           provider === "gemini"
             ? geminiKey
@@ -157,25 +156,36 @@ export const AiAnalysisModal: React.FC<AiAnalysisModalProps> = ({
             ? claudeKey
             : customKey;
 
-        const res = await fetch(apiUrl("/api/ai/analyze"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            provider,
-            apiKey,
-            query,
-            sampleLines,
-            lineOffset: 0,
-          }),
-        });
+        // Providers with a key entered here call the provider's own API
+        // directly from the device — no dependency on this app's own server,
+        // so this works the same in the web preview and the packaged Android
+        // app. Only the "use server default Gemini key" case (key left empty)
+        // and the custom-hosted-proxy option still need our own server.
+        if ((provider === "openai" || provider === "claude" || provider === "gemini") && apiKey) {
+          setProgressText(`Sending AI analysis request directly to ${provider.toUpperCase()}...`);
+          const directResults = await analyzeWithProviderDirect(provider, apiKey, query, sampleLines, 0);
+          setResults(directResults);
+        } else {
+          setProgressText(`Sending AI analysis request to ${provider.toUpperCase()} server...`);
 
-        if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.error || "AI Analysis request failed.");
+          const res = await fetch(apiUrl("/api/ai/analyze"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              provider,
+              apiKey,
+              query,
+              sampleLines,
+              lineOffset: 0,
+            }),
+          });
+
+          const data = await parseJsonResponse(res);
+          if (!res.ok) {
+            throw new Error(data.error || "AI Analysis request failed.");
+          }
+          setResults(data.matches || []);
         }
-
-        const data = await res.json();
-        setResults(data.matches || []);
       }
     } catch (err: any) {
       console.error("AI analysis error:", err);

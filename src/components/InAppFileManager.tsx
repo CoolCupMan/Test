@@ -290,7 +290,7 @@ export const InAppFileManager: React.FC<InAppFileManagerProps> = ({
         </div>
 
         {/* Upload & Reading Progress Indicator */}
-        {isUploading && (
+        {(isUploading || uploadStatus) && (
           <div className="p-3 bg-indigo-950/80 border-b border-indigo-800/60 flex items-center space-x-3 text-xs font-mono text-indigo-300 animate-pulse">
             <div className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping" />
             <span>{uploadStatus || "Processing file into storage..."}</span>
@@ -417,9 +417,14 @@ export const InAppFileManager: React.FC<InAppFileManagerProps> = ({
                 <div className="flex items-center space-x-1 shrink-0">
                   {!item.isDirectory && (
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        exportFileToLocalDevice(item);
+                        setIsUploading(true);
+                        setUploadStatus(`Exporting ${item.name}...`);
+                        const result = await exportFileToLocalDevice(item);
+                        setUploadStatus(result.message);
+                        setIsUploading(false);
+                        setTimeout(() => setUploadStatus(""), 3000);
                       }}
                       className="p-1.5 rounded hover:bg-slate-700 text-slate-300"
                       title="Export file to Android device storage"

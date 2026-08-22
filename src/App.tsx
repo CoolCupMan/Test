@@ -296,11 +296,13 @@ export default function App() {
       if ((ext === "html" || ext === "htm") && !fullContent.trim().toLowerCase().startsWith("<!doctype") && !fullContent.trim().toLowerCase().startsWith("<html")) {
         fullContent = formatAsChromeHtmlViewer(currentFile.name, lines);
       }
-      exportFileToLocalDevice({
+      const result = await exportFileToLocalDevice({
         ...currentFile,
         content: fullContent,
         size: fullContent.length,
       });
+      setSaveToastMessage(result.message);
+      setTimeout(() => setSaveToastMessage(null), 3500);
     }
   };
 

@@ -1,5 +1,6 @@
 import { VirtualFile, EditorSession } from "../types";
 import { splitLinesAsync } from "./performanceUtils";
+import { isNativePlatform, saveFileToPublicStorage } from "./nativeFileSystem";
 
 const DB_NAME = "binarycore_android_fs";
 const DB_VERSION = 1;
@@ -294,8 +295,20 @@ export async function joinLinesAsync(lines: string[]): Promise<string> {
   });
 }
 
-// Trigger browser download for external Android File Manager visibility
-export function exportFileToLocalDevice(file: VirtualFile): void {
+export interface ExportResult {
+  ok: boolean;
+  message: string;
+}
+
+// Save/export a file so it's reachable outside the app. In the packaged
+// Android app this writes a real file into public storage (via
+// nativeFileSystem.ts) so any file manager can browse to and open it later.
+// In a regular browser (web/dev preview), this triggers a normal download.
+export async function exportFileToLocalDevice(file: VirtualFile): Promise<ExportResult> {
+  if (isNativePlatform()) {
+    return saveFileToPublicStorage(file);
+  }
+
   const ext = (file.extension || "").toLowerCase();
   const mimeType =
     ext === "html" || ext === "htm"
@@ -329,10 +342,18 @@ export function exportFileToLocalDevice(file: VirtualFile): void {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+  return { ok: true, message: `Downloaded ${file.name}` };
 }
 
-// Modern File System Access API Save As function (falls back to Blob download)
-export async function saveFileAsExternal(file: VirtualFile): Promise<boolean> {
+// Save-As entry point: native Filesystem write in the packaged Android app,
+// File System Access API (with a "Save As" folder picker) in a supporting
+// desktop browser, and a plain download everywhere else.
+export async function saveFileAsExternal(file: VirtualFile): Promise<ExportResult> {
+  if (isNativePlatform()) {
+    return saveFileToPublicStorage(file);
+  }
+
   try {
     if ("showSaveFilePicker" in window) {
       const ext = (file.extension || "txt").toLowerCase();
@@ -374,13 +395,12 @@ export async function saveFileAsExternal(file: VirtualFile): Promise<boolean> {
       }
 
       await writable.close();
-      return true;
+      return { ok: true, message: `Saved ${file.name}` };
     }
   } catch (err: any) {
-    if (err.name === "AbortError") return false;
+    if (err.name === "AbortError") return { ok: false, message: "Save cancelled." };
     console.warn("showSaveFilePicker unavailable or rejected, falling back to download:", err);
   }
 
-  exportFileToLocalDevice(file);
-  return true;
+  return exportFileToLocalDevice(file);
 }

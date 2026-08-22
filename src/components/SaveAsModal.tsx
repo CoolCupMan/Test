@@ -19,6 +19,7 @@ import {
   joinLinesAsync,
 } from "../lib/indexedDbStorage";
 import { formatAsChromeHtmlViewer } from "../lib/htmlExportFormatter";
+import { isNativePlatform } from "../lib/nativeFileSystem";
 
 interface SaveAsModalProps {
   currentFile: VirtualFile | null;
@@ -135,7 +136,7 @@ export const SaveAsModal: React.FC<SaveAsModalProps> = ({
     if (!baseName.trim()) return;
 
     setIsSaving(true);
-    setSaveStatus("Opening save file dialog...");
+    setSaveStatus(isNativePlatform() ? "Saving to device storage..." : "Opening save file dialog...");
 
     try {
       const mimeType =
@@ -165,17 +166,15 @@ export const SaveAsModal: React.FC<SaveAsModalProps> = ({
         parentPath: targetDirPath,
       };
 
-      const success = await saveFileAsExternal(fileToExport);
-      if (success) {
-        setSaveStatus(`Saved ${finalFileName} to device!`);
+      const result = await saveFileAsExternal(fileToExport);
+      setSaveStatus(result.message);
+      if (result.ok) {
         // Also save to virtual storage so active document updates
         await saveVirtualFile(fileToExport);
         setTimeout(() => {
           onSaved(fileToExport);
           onClose();
-        }, 300);
-      } else {
-        setSaveStatus("Save operation cancelled.");
+        }, 600);
       }
     } catch (err: any) {
       console.error("External save error:", err);

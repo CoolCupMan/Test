@@ -16,7 +16,7 @@ import {
   Info,
 } from "lucide-react";
 import { isGoogleSignInConfigured, signInWithGoogle } from "../lib/googleAuth";
-import { apiUrl } from "../lib/apiBase";
+import { verifyApiKeyDirect } from "../lib/aiProviders";
 
 export interface UserAccount {
   username: string;
@@ -133,7 +133,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // Shared handler for OpenAI / Claude: verify the key server-side, then link the account.
+  // Shared handler for OpenAI / Claude: verify the key directly against the
+  // provider's own API (no dependency on our own server — this runs the same
+  // way in the web preview and in the packaged Android app), then link the account.
   const handleApiKeyAuth = async (provider: ApiKeyProvider) => {
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -146,15 +148,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setVerifyingProvider(provider);
     try {
-      const res = await fetch(apiUrl("/api/auth/verify-key"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: keyInput }),
-      });
-      const data = await res.json();
+      const result = await verifyApiKeyDirect(provider, keyInput);
 
-      if (!data.ok) {
-        setErrorMsg(data.error || "Der API Key konnte nicht verifiziert werden.");
+      if (!result.ok) {
+        setErrorMsg(result.error || "Der API Key konnte nicht verifiziert werden.");
         return;
       }
 
