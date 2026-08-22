@@ -1,0 +1,8 @@
+{
+  "name": "binarycore3d3x",
+  "description": "Android-optimized .txt and .dat text editor with ultra high-performance virtualization for up to 1,000,000+ lines, dual precision scrolling, internal Android file manager (/storage/emulated/0/), instant search, and AI text analysis (OpenAI, Gemini, Claude, Local AI). Real Google Sign-In, verified OpenAI/Claude API key login.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

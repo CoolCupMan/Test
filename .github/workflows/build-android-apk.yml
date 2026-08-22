@@ -1,0 +1,77 @@
+name: Build Android APK
+
+# GitHub-hosted Ubuntu runners ship a preinstalled Android SDK, which is the
+# actual reason this build lives in CI rather than being run by an assistant
+# session: sandboxed dev/agent environments generally have no Android SDK and
+# can't fetch one (dl.google.com is typically blocked by egress policy), so
+# this workflow is the practical way to get a real, installable APK out of
+# this repo.
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - "claude/**"
+      - "main"
+    paths:
+      - "src/**"
+      - "android/**"
+      - "capacitor.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/build-android-apk.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        env:
+          # Optional — set these as repo/environment Secrets or Variables to enable
+          # real Google Sign-In and working AI/login features in the packaged app.
+          # Safe to leave unset: the app just disables Google Sign-In and AI calls
+          # that need a reachable server until they're configured.
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: npx vite build
+
+      - name: Sync Capacitor Android project
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+        run: npx cap sync android
+
+      - name: Grant execute permission to gradlew
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk out/binarycore3d3x-debug.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binarycore3d3x-debug-apk
+          path: out/binarycore3d3x-debug.apk
+          retention-days: 30

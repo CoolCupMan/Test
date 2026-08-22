@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">binarycore3d3x</string>
+    <string name="title_activity_main">binarycore3d3x</string>
+    <string name="package_name">app.binarycore.editor3dx</string>
+    <string name="custom_url_scheme">app.binarycore.editor3dx</string>
+</resources>
