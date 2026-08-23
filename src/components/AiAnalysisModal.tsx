@@ -17,12 +17,14 @@ import { AiCredentials, AiMatchResult, AiProvider } from "../types";
 import { runLocalAiAnalysis } from "../lib/localAiEngine";
 import { apiUrl, parseJsonResponse } from "../lib/apiBase";
 import { analyzeWithProviderDirect } from "../lib/aiProviders";
+import { t } from "../lib/i18n";
 
 import { UserAccount } from "./AuthModal";
 
 interface AiAnalysisModalProps {
   lines: string[];
   darkTheme: boolean;
+  language: string;
   credentials: AiCredentials;
   userAccount?: UserAccount | null;
   onUpdateCredentials: (newCreds: AiCredentials) => void;
@@ -35,6 +37,7 @@ interface AiAnalysisModalProps {
 export const AiAnalysisModal: React.FC<AiAnalysisModalProps> = ({
   lines,
   darkTheme,
+  language,
   credentials,
   userAccount,
   onUpdateCredentials,
@@ -314,7 +317,7 @@ export const AiAnalysisModal: React.FC<AiAnalysisModalProps> = ({
                 title="Google / OpenAI / Email Konto verbinden"
               >
                 <Globe className="w-3.5 h-3.5" />
-                <span>Konto verbinden</span>
+                <span>{t(language, "connectAccountBtn")}</span>
               </button>
             )}
 
@@ -359,7 +362,7 @@ export const AiAnalysisModal: React.FC<AiAnalysisModalProps> = ({
                 onClick={onOpenAuth}
                 className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 flex items-center gap-1 shadow-sm"
               >
-                <span>{userAccount?.isLoggedIn ? "Konto Verwalten" : "Jetzt Anmelden"}</span>
+                <span>{userAccount?.isLoggedIn ? t(language, "manageAccountBtn") : t(language, "loginNowBtn")}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>

@@ -47,4 +47,5 @@ export interface EditorSession {
   isHorizontalMode: boolean; // Toggle for horizontal scrolling with all characters on line
   showLineNumbers: boolean;
   slowScrollRatio: number; // e.g. 0.1 for 10x slower precision scroll
+  language: string; // UI language code (see src/lib/i18n.ts), e.g. "en", "de", "ja"
 }

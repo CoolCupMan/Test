@@ -36,6 +36,7 @@ export default function App() {
     isHorizontalMode: false,
     showLineNumbers: true,
     slowScrollRatio: 0.1,
+    language: "en",
   });
 
   const [currentFile, setCurrentFile] = useState<VirtualFile | null>(null);
@@ -350,6 +351,7 @@ export default function App() {
         fileExtension={currentFile?.extension || "txt"}
         totalLines={lines.length}
         darkTheme={session.darkTheme}
+        language={session.language}
         userAccount={userAccount}
         aiMatchesCount={aiMatches.length}
         showAiMatchToolbar={showAiMatchToolbar}
@@ -428,6 +430,7 @@ export default function App() {
         <AiAnalysisModal
           lines={lines}
           darkTheme={session.darkTheme}
+          language={session.language}
           credentials={aiCredentials}
           userAccount={userAccount}
           onUpdateCredentials={(creds) => setAiCredentials(creds)}
@@ -452,6 +455,7 @@ export default function App() {
       {showAuthModal && (
         <AuthModal
           darkTheme={session.darkTheme}
+          language={session.language}
           userAccount={userAccount}
           onLoginSuccess={handleLoginSuccess}
           onLogout={handleLogout}

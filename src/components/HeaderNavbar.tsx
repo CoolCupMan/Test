@@ -19,12 +19,14 @@ import {
   Globe,
 } from "lucide-react";
 import { UserAccount } from "./AuthModal";
+import { t } from "../lib/i18n";
 
 interface HeaderNavbarProps {
   currentFileName: string;
   fileExtension: string;
   totalLines: number;
   darkTheme: boolean;
+  language: string;
   userAccount: UserAccount | null;
   aiMatchesCount?: number;
   showAiMatchToolbar?: boolean;
@@ -49,6 +51,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   fileExtension,
   totalLines,
   darkTheme,
+  language,
   userAccount,
   aiMatchesCount = 0,
   showAiMatchToolbar = false,
@@ -133,7 +136,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             title="Save file changes immediately to in-app storage"
           >
             <Save className="w-4 h-4 text-emerald-100" />
-            <span>Save</span>
+            <span>{t(language, "save")}</span>
           </button>
 
           {/* Save As Button */}
@@ -152,7 +155,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             title="Save file as .txt, .dat, .html, or export anywhere on device"
           >
             <Download className="w-4 h-4 text-teal-400" />
-            <span className="inline">Save As...</span>
+            <span className="inline">{t(language, "saveAs")}</span>
           </button>
 
           {/* New Line at Bottom Button from Topper Menu */}
@@ -164,7 +167,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
               title="Create new line at bottom from topper menu and open text writing box"
             >
               <PlusCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="hidden sm:inline">+ New Line</span>
+              <span className="hidden sm:inline">{t(language, "newLineBtn")}</span>
             </button>
           )}
 
@@ -180,7 +183,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             title="Open Internal Android File Manager (/storage/emulated/0/)"
           >
             <FolderOpen className="w-4 h-4 text-emerald-500" />
-            <span className="hidden sm:inline">Files</span>
+            <span className="hidden sm:inline">{t(language, "files")}</span>
           </button>
 
           {/* AI Analysis Window Button */}
@@ -191,7 +194,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             title="AI Text Analysis (Gemini, OpenAI, Local AI)"
           >
             <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-            <span>AI Search</span>
+            <span>{t(language, "aiSearchBtn")}</span>
           </button>
 
           {/* AI Jump Toolbar Toggle Button (when AI matches exist) */}
@@ -223,7 +226,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             title="Find exact character matches up to 1,000,000+ lines"
           >
             <Search className="w-4 h-4 text-cyan-500" />
-            <span className="hidden sm:inline">Find</span>
+            <span className="hidden sm:inline">{t(language, "find")}</span>
           </button>
 
           {/* Jump Top & Jump Bottom Controls */}
@@ -311,7 +314,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             ) : (
               <>
                 <LogIn className="w-3.5 h-3.5" />
-                <span>Anmelden</span>
+                <span>{t(language, "login")}</span>
               </>
             )}
           </button>

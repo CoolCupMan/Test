@@ -1,6 +1,7 @@
 import { VirtualFile, EditorSession } from "../types";
 import { splitLinesAsync } from "./performanceUtils";
 import { isNativePlatform, saveFileToPublicStorage } from "./nativeFileSystem";
+import { SUPPORTED_LANGUAGES } from "./i18n";
 
 const DB_NAME = "binarycore_android_fs";
 const DB_VERSION = 1;
@@ -245,6 +246,26 @@ export async function saveSessionState(session: Partial<EditorSession>): Promise
   });
 }
 
+// Guess a sensible default UI language from the browser/device locale (e.g.
+// Android's system language) on first run, before any language has been
+// explicitly chosen or persisted. Falls back to English when unsupported.
+function detectDefaultLanguage(): string {
+  try {
+    const candidates = [
+      ...(navigator.languages || []),
+      navigator.language,
+    ].filter(Boolean) as string[];
+
+    for (const candidate of candidates) {
+      const code = candidate.toLowerCase().split("-")[0];
+      if (SUPPORTED_LANGUAGES.some((l) => l.code === code)) {
+        return code;
+      }
+    }
+  } catch (_) {}
+  return "en";
+}
+
 // Get session settings
 export async function loadSessionState(): Promise<EditorSession> {
   const db = await openDB();
@@ -258,6 +279,7 @@ export async function loadSessionState(): Promise<EditorSession> {
     isHorizontalMode: false,
     showLineNumbers: true,
     slowScrollRatio: 0.1,
+    language: detectDefaultLanguage(),
   };
 
   return new Promise((resolve) => {

@@ -16,7 +16,7 @@ import {
   Info,
 } from "lucide-react";
 import { isGoogleSignInConfigured, signInWithGoogle } from "../lib/googleAuth";
-import { verifyApiKeyDirect } from "../lib/aiProviders";
+import { t } from "../lib/i18n";
 
 export interface UserAccount {
   username: string;
@@ -29,6 +29,7 @@ export interface UserAccount {
 
 interface AuthModalProps {
   darkTheme: boolean;
+  language: string;
   userAccount: UserAccount | null;
   onLoginSuccess: (account: UserAccount) => void;
   onLogout: () => void;
@@ -46,6 +47,7 @@ type ApiKeyProvider = "openai" | "claude";
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   darkTheme,
+  language,
   userAccount,
   onLoginSuccess,
   onLogout,
@@ -64,7 +66,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // API-key based provider linking (OpenAI / Claude)
   const [openaiKeyInput, setOpenaiKeyInput] = useState("");
   const [claudeKeyInput, setClaudeKeyInput] = useState("");
-  const [verifyingProvider, setVerifyingProvider] = useState<ApiKeyProvider | null>(null);
 
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
 
@@ -138,10 +139,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // Shared handler for OpenAI / Claude: verify the key directly against the
-  // provider's own API (no dependency on our own server — this runs the same
-  // way in the web preview and in the packaged Android app), then link the account.
-  const handleApiKeyAuth = async (provider: ApiKeyProvider) => {
+  // Checks only that a key LOOKS like a real OpenAI/Anthropic key (correct
+  // prefix + plausible length) — no network request to OpenAI or Anthropic
+  // at all. This button is authentication into THIS app (who you are here),
+  // not a check-in with the provider's service; using the key to actually
+  // run AI Analysis is a separate action later that naturally does contact
+  // the provider, because that's the feature doing real work.
+  const isPlausibleKeyFormat = (provider: ApiKeyProvider, key: string): boolean => {
+    if (provider === "openai") return /^sk-[A-Za-z0-9_-]{10,}$/.test(key);
+    return /^sk-ant-[A-Za-z0-9_-]{10,}$/.test(key);
+  };
+
+  // Shared handler for OpenAI / Claude: logs in locally using the key's
+  // format as identity — deliberately never contacts OpenAI or Anthropic to
+  // do so (see isPlausibleKeyFormat above). The key is still carried into
+  // the app's AI Credentials (onVerifiedApiKey) so AI Analysis has it
+  // pre-filled, but that's a convenience for later, not part of login itself.
+  const handleApiKeyAuth = (provider: ApiKeyProvider) => {
     setErrorMsg(null);
     setSuccessMsg(null);
 
@@ -151,52 +165,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    setVerifyingProvider(provider);
-    try {
-      const result = await verifyApiKeyDirect(provider, keyInput);
-
-      if (!result.ok) {
-        setErrorMsg(result.error || "Der API Key konnte nicht verifiziert werden.");
-        return;
-      }
-
-      // Extend the user's existing display name with "(OpenAI Developer)" /
-      // "(Claude Developer)" instead of replacing it outright, so a name set
-      // in Settings survives connecting an API key — this combined name is
-      // what gets persisted (via onLoginSuccess > session.userName), so it's
-      // remembered across app restarts, not just this session.
-      const developerTag = provider === "openai" ? "OpenAI Developer" : "Claude Developer";
-      const trimmedCurrent = (currentUserName || "").trim();
-      const hasCustomName = trimmedCurrent.length > 0 && trimmedCurrent.toLowerCase() !== "user";
-      const alreadyTagged = trimmedCurrent.includes(developerTag);
-      const username = alreadyTagged
-        ? trimmedCurrent
-        : hasCustomName
-        ? `${trimmedCurrent} (${developerTag})`
-        : developerTag;
-      const email = provider === "openai" ? "openai.developer@app.local" : "claude.developer@app.local";
-
-      const account: UserAccount = {
-        username,
-        email,
-        authProvider: provider,
-        isLoggedIn: true,
-        apiKey: keyInput,
-        avatarUrl:
-          provider === "openai" ? "https://openai.com/favicon.ico" : "https://claude.ai/favicon.ico",
-      };
-
-      onVerifiedApiKey?.(provider, keyInput);
-      setSuccessMsg(`${provider === "openai" ? "OpenAI" : "Claude"} API Key verifiziert & verbunden!`);
-      setTimeout(() => {
-        onLoginSuccess(account);
-        onClose();
-      }, 400);
-    } catch (err: any) {
-      setErrorMsg(err?.message || "Verifizierung fehlgeschlagen (Netzwerkfehler).");
-    } finally {
-      setVerifyingProvider(null);
+    if (!isPlausibleKeyFormat(provider, keyInput)) {
+      setErrorMsg(
+        provider === "openai"
+          ? 'Dieser Schlüssel sieht nicht wie ein OpenAI API Key aus (sollte mit "sk-" beginnen).'
+          : 'Dieser Schlüssel sieht nicht wie ein Anthropic API Key aus (sollte mit "sk-ant-" beginnen).'
+      );
+      return;
     }
+
+    // Extend the user's existing display name with "(OpenAI Developer)" /
+    // "(Claude Developer)" instead of replacing it outright, so a name set
+    // in Settings survives connecting an API key — this combined name is
+    // what gets persisted (via onLoginSuccess > session.userName), so it's
+    // remembered across app restarts, not just this session.
+    const developerTag = provider === "openai" ? "OpenAI Developer" : "Claude Developer";
+    const trimmedCurrent = (currentUserName || "").trim();
+    const hasCustomName = trimmedCurrent.length > 0 && trimmedCurrent.toLowerCase() !== "user";
+    const alreadyTagged = trimmedCurrent.includes(developerTag);
+    const username = alreadyTagged
+      ? trimmedCurrent
+      : hasCustomName
+      ? `${trimmedCurrent} (${developerTag})`
+      : developerTag;
+    const email = provider === "openai" ? "openai.developer@app.local" : "claude.developer@app.local";
+
+    const account: UserAccount = {
+      username,
+      email,
+      authProvider: provider,
+      isLoggedIn: true,
+      apiKey: keyInput,
+      avatarUrl:
+        provider === "openai" ? "https://openai.com/favicon.ico" : "https://claude.ai/favicon.ico",
+    };
+
+    onVerifiedApiKey?.(provider, keyInput);
+    setSuccessMsg(
+      `${provider === "openai" ? "OpenAI" : "Claude"} verbunden (lokal, ohne Kontakt zum Anbieter).`
+    );
+    setTimeout(() => {
+      onLoginSuccess(account);
+      onClose();
+    }, 400);
   };
 
   return (
@@ -216,10 +227,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
             <div>
               <h2 className="font-bold text-base sm:text-lg tracking-tight">
-                Anmeldung & Konto
+                {t(language, "authTitle")}
               </h2>
               <p className="text-[11px] text-slate-400">
-                Google, OpenAI & Claude verbinden
+                Google, OpenAI & Claude
               </p>
             </div>
           </div>
@@ -274,7 +285,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 className="w-full py-2 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-semibold text-xs flex items-center justify-center space-x-1.5 transition-colors"
               >
                 <LogOut className="w-4 h-4" />
-                <span>Abmelden (Sign Out)</span>
+                <span>{t(language, "signOutBtn")}</span>
               </button>
             </div>
           ) : (
@@ -304,7 +315,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   }`}
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Google / OpenAI / Claude</span>
+                  <span>{t(language, "tabSso")}</span>
                 </button>
                 <button
                   onClick={() => setActiveTab("credentials")}
@@ -315,7 +326,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   }`}
                 >
                   <Mail className="w-3.5 h-3.5" />
-                  <span>Benutzername & PW</span>
+                  <span>{t(language, "tabCredentials")}</span>
                 </button>
               </div>
 
@@ -331,7 +342,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           <path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15s.7 5.3 1.9 7.7l3.7-2.9c-.8-1.5-1.3-3.2-1.3-5z" />
                           <path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.2-6.4-5.2L1.9 16C3.7 19.7 7.5 22.3 12 23z" />
                         </svg>
-                        <span>Google Konto Login (echtes OAuth)</span>
+                        <span>{t(language, "googleSectionTitle")}</span>
                       </span>
                     </div>
 
@@ -354,7 +365,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
                         <>
-                          <span>Mit Google anmelden</span>
+                          <span>{t(language, "googleLoginBtn")}</span>
                           <ArrowRight className="w-3.5 h-3.5" />
                         </>
                       )}
@@ -367,10 +378,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center text-[9px] font-bold text-slate-950">
                         AI
                       </div>
-                      <span>OpenAI API Key verbinden</span>
+                      <span>{t(language, "openaiSectionTitle")}</span>
                     </span>
                     <p className="text-[11px] text-slate-500">
-                      OpenAI bietet kein öffentliches "Sign in with OpenAI" für Drittanbieter-Apps &mdash; wir verifizieren stattdessen deinen API Key direkt.
+                      OpenAI bietet kein öffentliches "Sign in with OpenAI" für Drittanbieter-Apps &mdash; dies loggt dich lokal anhand des Schlüsselformats ein, ohne OpenAI zu kontaktieren.
                     </p>
                     <div className="flex items-center gap-1.5">
                       <input
@@ -383,17 +394,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleApiKeyAuth("openai")}
-                        disabled={verifyingProvider === "openai"}
                         className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shrink-0"
                       >
-                        {verifyingProvider === "openai" ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <>
-                            <span>Verbinden</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </>
-                        )}
+                        <span>{t(language, "connectBtn")}</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -404,10 +408,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <div className="w-4 h-4 rounded-full bg-orange-500 flex items-center justify-center text-[9px] font-bold text-slate-950">
                         C
                       </div>
-                      <span>Claude (Anthropic) API Key verbinden</span>
+                      <span>{t(language, "claudeSectionTitle")}</span>
                     </span>
                     <p className="text-[11px] text-slate-500">
-                      Nutzt deinen Anthropic API Key für serverseitige AI Textanalyse mit Claude.
+                      Loggt dich lokal anhand des Schlüsselformats ein, ohne Anthropic zu kontaktieren. Derselbe Key wird für AI-Textanalyse mit Claude vorausgefüllt.
                     </p>
                     <div className="flex items-center gap-1.5">
                       <input
@@ -420,17 +424,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleApiKeyAuth("claude")}
-                        disabled={verifyingProvider === "claude"}
                         className="px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shrink-0"
                       >
-                        {verifyingProvider === "claude" ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <>
-                            <span>Verbinden</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </>
-                        )}
+                        <span>{t(language, "connectBtn")}</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -446,7 +443,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="space-y-1">
                     <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
                       <Mail className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Benutzername oder E-Mail-Adresse:</span>
+                      <span>{t(language, "usernameOrEmailLabel")}</span>
                     </label>
                     <input
                       type="text"
@@ -461,7 +458,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="space-y-1">
                     <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
                       <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Passwort:</span>
+                      <span>{t(language, "passwordLabel")}</span>
                     </label>
                     <input
                       type="password"
@@ -478,7 +475,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-md transition-colors mt-2"
                   >
                     <span>
-                      {isRegistering ? "Konto erstellen" : "Anmelden mit Passwort"}
+                      {isRegistering ? t(language, "createAccountBtn") : t(language, "loginWithPasswordBtn")}
                     </span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
@@ -490,8 +487,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       className="text-[11px] text-teal-400 hover:underline font-medium"
                     >
                       {isRegistering
-                        ? "Bereits ein Konto? Hier anmelden."
-                        : "Noch kein Konto? Jetzt registrieren."}
+                        ? t(language, "hasAccountToggle")
+                        : t(language, "noAccountToggle")}
                     </button>
                   </div>
                 </form>
