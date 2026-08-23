@@ -457,6 +457,7 @@ export default function App() {
           onLogout={handleLogout}
           onClose={() => setShowAuthModal(false)}
           onVerifiedApiKey={handleVerifiedApiKey}
+          currentUserName={session.userName}
         />
       )}
 
@@ -475,8 +476,11 @@ export default function App() {
         />
       )}
 
-      {/* Floating Save Action Button for Mobile / Android Touchscreens */}
-      <div className="fixed bottom-4 right-4 z-40 sm:hidden flex flex-col gap-2">
+      {/* Floating Save Action Button for Mobile / Android Touchscreens.
+          Nudged up + left from the corner so it sits less on top of the
+          text-message compose box's Send button (bottom-right of that box,
+          same corner this floats over) when the writing box is expanded. */}
+      <div className="fixed bottom-20 right-6 z-40 sm:hidden flex flex-col gap-2">
         <button
           type="button"
           onClick={handleQuickSave}

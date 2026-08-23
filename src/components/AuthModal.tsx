@@ -36,6 +36,10 @@ interface AuthModalProps {
   // Pushes a verified provider API key into the app's shared AI credentials so
   // logging in here also wires up AI Analysis without re-entering the key there.
   onVerifiedApiKey?: (provider: "openai" | "claude", apiKey: string) => void;
+  // The name currently shown on timestamp entries (Settings > User Name), so
+  // an OpenAI/Claude API-key login can extend it (e.g. "Chris (Claude
+  // Developer)") instead of replacing it outright.
+  currentUserName?: string;
 }
 
 type ApiKeyProvider = "openai" | "claude";
@@ -47,6 +51,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onLogout,
   onClose,
   onVerifiedApiKey,
+  currentUserName,
 }) => {
   const [activeTab, setActiveTab] = useState<"sso" | "credentials">("sso");
   const [isRegistering, setIsRegistering] = useState(false);
@@ -155,7 +160,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
 
-      const username = provider === "openai" ? "OpenAI Developer" : "Claude Developer";
+      // Extend the user's existing display name with "(OpenAI Developer)" /
+      // "(Claude Developer)" instead of replacing it outright, so a name set
+      // in Settings survives connecting an API key — this combined name is
+      // what gets persisted (via onLoginSuccess > session.userName), so it's
+      // remembered across app restarts, not just this session.
+      const developerTag = provider === "openai" ? "OpenAI Developer" : "Claude Developer";
+      const trimmedCurrent = (currentUserName || "").trim();
+      const hasCustomName = trimmedCurrent.length > 0 && trimmedCurrent.toLowerCase() !== "user";
+      const alreadyTagged = trimmedCurrent.includes(developerTag);
+      const username = alreadyTagged
+        ? trimmedCurrent
+        : hasCustomName
+        ? `${trimmedCurrent} (${developerTag})`
+        : developerTag;
       const email = provider === "openai" ? "openai.developer@app.local" : "claude.developer@app.local";
 
       const account: UserAccount = {

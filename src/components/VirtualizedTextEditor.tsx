@@ -941,43 +941,64 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     if (e) e.preventDefault();
     if (!chatInput) return;
 
+    // Split the compose box into individual lines. A multi-line paste (e.g. a
+    // block of code) used to get sent as ONE document line with raw "\n"
+    // characters embedded inside it — no real per-line numbering until a
+    // save+reload round trip happened to re-split it. Now every line becomes
+    // its own real document line immediately: only the first gets the
+    // timestamp+name prefix, like a real chat message; the rest are inserted
+    // as plain continuation lines. Nothing here trims interior lines, so
+    // indentation/whitespace and normal backspace editing on them are
+    // completely unaffected — only fully-empty lines at the very start/end
+    // (stray Enter presses before hitting Send) are dropped.
+    const rawInputLines = chatInput.split("\n");
+    let start = 0;
+    let end = rawInputLines.length;
+    while (end - start > 1 && rawInputLines[start].length === 0) start++;
+    while (end - start > 1 && rawInputLines[end - 1].length === 0) end--;
+    const contentLines = rawInputLines.slice(start, end);
+    if (contentLines.length === 0 || contentLines.every((l) => l.trim() === "")) return;
+
     let updatedLines = [...lines];
     const ts = generateTimestampStr();
-    const formattedEntry = `${ts}${chatInput.trim()}`;
+    const entries = [`${ts}${contentLines[0]}`, ...contentLines.slice(1)];
+    const lastEntryText = entries[entries.length - 1];
     let focusLineIdx: number | null = null;
 
     if (isFreeWritingMode) {
-      // FREE WRITING MODE: Create new message line with timestamp & username at exact cursor location
+      // FREE WRITING MODE: Create new message line(s) with timestamp & username at exact cursor location
       if (activeLineIdx !== null && activeLineIdx < lines.length) {
         const targetLine = lines[activeLineIdx] || "";
         if (targetLine.trim() === "") {
           // Fill target empty line
-          updatedLines[activeLineIdx] = formattedEntry;
-          setActiveColIdx(formattedEntry.length);
-          focusLineIdx = activeLineIdx;
+          updatedLines.splice(activeLineIdx, 1, ...entries);
+          const newIdx = activeLineIdx + entries.length - 1;
+          setActiveLineIdx(newIdx);
+          setActiveColIdx(lastEntryText.length);
+          focusLineIdx = newIdx;
         } else if (activeColIdx !== null && activeColIdx > 0 && activeColIdx < targetLine.length) {
-          // Split line at cursor column and insert timestamped message as its own new line in between
+          // Split line at cursor column and insert timestamped message as its own new line(s) in between
           const beforeText = targetLine.slice(0, activeColIdx);
           const afterText = targetLine.slice(activeColIdx);
-          updatedLines.splice(activeLineIdx, 1, beforeText, formattedEntry, afterText);
-          const newIdx = activeLineIdx + 1;
+          updatedLines.splice(activeLineIdx, 1, beforeText, ...entries, afterText);
+          const newIdx = activeLineIdx + entries.length;
           setActiveLineIdx(newIdx);
-          setActiveColIdx(formattedEntry.length);
+          setActiveColIdx(lastEntryText.length);
           focusLineIdx = newIdx;
         } else {
-          // Insert as new message line directly after active line
-          const newIdx = activeLineIdx + 1;
-          updatedLines.splice(newIdx, 0, formattedEntry);
+          // Insert as new message line(s) directly after active line
+          updatedLines.splice(activeLineIdx + 1, 0, ...entries);
+          const newIdx = activeLineIdx + entries.length;
           setActiveLineIdx(newIdx);
-          setActiveColIdx(formattedEntry.length);
+          setActiveColIdx(lastEntryText.length);
           focusLineIdx = newIdx;
         }
       } else {
-        // Append new message line at bottom of file
-        updatedLines.push(formattedEntry);
+        // Append new message line(s) at bottom of file
+        updatedLines.push(...entries);
         const newIdx = updatedLines.length - 1;
         setActiveLineIdx(newIdx);
-        setActiveColIdx(formattedEntry.length);
+        setActiveColIdx(lastEntryText.length);
         focusLineIdx = newIdx;
       }
     } else {
@@ -985,19 +1006,19 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
       if (activeLineIdx !== null && activeLineIdx < lines.length) {
         const targetLine = lines[activeLineIdx] || "";
         if (targetLine.trim() === "") {
-          updatedLines[activeLineIdx] = formattedEntry;
-          focusLineIdx = activeLineIdx;
+          updatedLines.splice(activeLineIdx, 1, ...entries);
+          focusLineIdx = activeLineIdx + entries.length - 1;
         } else if (activeColIdx !== null && activeColIdx > 0 && activeColIdx < targetLine.length) {
           const beforeText = targetLine.slice(0, activeColIdx);
           const afterText = targetLine.slice(activeColIdx);
-          updatedLines.splice(activeLineIdx, 1, beforeText, formattedEntry, afterText);
-          focusLineIdx = activeLineIdx + 1;
+          updatedLines.splice(activeLineIdx, 1, beforeText, ...entries, afterText);
+          focusLineIdx = activeLineIdx + entries.length;
         } else {
-          updatedLines.splice(activeLineIdx + 1, 0, formattedEntry);
-          focusLineIdx = activeLineIdx + 1;
+          updatedLines.splice(activeLineIdx + 1, 0, ...entries);
+          focusLineIdx = activeLineIdx + entries.length;
         }
       } else {
-        updatedLines.push(formattedEntry);
+        updatedLines.push(...entries);
         focusLineIdx = updatedLines.length - 1;
       }
 
