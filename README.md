@@ -57,7 +57,7 @@ The Login modal (top right) supports:
      `VITE_GOOGLE_CLIENT_ID` — it's used for both the web flow and as the
      Android plugin's `clientId`/`serverClientId`.
    - Create a second **Android** client for the packaged app: package name
-     `app.binarycore.editor3dx5`, and the SHA-1 fingerprint of whatever keystore
+     `app.binarycore.editor3dx6`, and the SHA-1 fingerprint of whatever keystore
      signs your build. Google Play Services matches this automatically at
      runtime — it isn't referenced anywhere in code.
      - Debug keystore SHA-1 (what the CI build in this repo produces):
