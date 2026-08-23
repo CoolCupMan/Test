@@ -477,10 +477,12 @@ export default function App() {
       )}
 
       {/* Floating Save Action Button for Mobile / Android Touchscreens.
-          Nudged up + left from the corner so it sits less on top of the
-          text-message compose box's Send button (bottom-right of that box,
-          same corner this floats over) when the writing box is expanded. */}
-      <div className="fixed bottom-20 right-6 z-40 sm:hidden flex flex-col gap-2">
+          Raised well above the text-message compose box's full expanded
+          height (header bar + textarea + "+ Top"/"+ Bottom"/Send button
+          column + the optional remark-target footer) so it always sits
+          above that whole button column instead of overlapping Send —
+          regardless of whether the writing box is collapsed or expanded. */}
+      <div className="fixed bottom-72 right-6 z-40 sm:hidden flex flex-col gap-2">
         <button
           type="button"
           onClick={handleQuickSave}
