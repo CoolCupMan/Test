@@ -154,6 +154,32 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     return () => observer.disconnect();
   }, [isWritingBoxExpanded]);
 
+  // Keep the writing box fully visible above the on-screen keyboard —
+  // including its emoji panel, which is usually taller than the regular
+  // keyboard. Nothing here declares a resize mode in the Android manifest,
+  // so window.visualViewport is the reliable way to learn how much of the
+  // screen the keyboard is actually covering right now, and shrink/raise
+  // the writing box to fit above it so its first line stays readable
+  // instead of sliding under the keyboard.
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  useEffect(() => {
+    if (!isWritingBoxExpanded || typeof window === "undefined" || !window.visualViewport) {
+      setKeyboardInset(0);
+      return;
+    }
+    const vv = window.visualViewport;
+    const handleViewportChange = () => {
+      setKeyboardInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+    };
+    handleViewportChange();
+    vv.addEventListener("resize", handleViewportChange);
+    vv.addEventListener("scroll", handleViewportChange);
+    return () => {
+      vv.removeEventListener("resize", handleViewportChange);
+      vv.removeEventListener("scroll", handleViewportChange);
+    };
+  }, [isWritingBoxExpanded]);
+
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(600);
   const [wordWrap, setWordWrap] = useState(initialWordWrap);
@@ -2280,7 +2306,11 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
           </div>
         </div>
       ) : (
-        <div ref={bottomBarRef} className="absolute bottom-0 left-0 right-0 z-30 shadow-2xl transition-all duration-200">
+        <div
+          ref={bottomBarRef}
+          className="absolute left-0 right-0 z-30 shadow-2xl transition-all duration-200"
+          style={{ bottom: keyboardInset }}
+        >
           {/* Expanded Top Header Handle Bar with Android Back Key Control */}
           <div
             className={`px-3 py-1.5 border-t border-b flex items-center justify-between gap-2 text-xs font-mono select-none backdrop-blur-md ${
@@ -2344,7 +2374,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
             <textarea
               ref={chatInputRef}
               value={chatInput}
-              rows={6}
+              rows={keyboardInset > 0 ? 3 : 6}
               onChange={(e) => setChatInput(e.target.value)}
               onFocus={() => {
                 if (chatInputRef.current) {
@@ -2362,7 +2392,13 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                   ? "Type free writing entry to insert at cursor position..."
                   : "Type timestamped remark to send into document..."
               }
-              className={`flex-1 px-3 py-2 text-base sm:text-sm min-h-[150px] sm:min-h-[110px] rounded-lg font-mono focus:outline-none focus:ring-2 resize-none overflow-y-auto leading-relaxed whitespace-pre-wrap break-words ${
+              className={`flex-1 px-3 py-2 text-base sm:text-sm ${
+                // Shrink a little while the on-screen keyboard's emoji panel (or
+                // any taller keyboard layout) is open, so the box as a whole fits
+                // above it and its first line stays visible instead of being
+                // pushed underneath.
+                keyboardInset > 0 ? "min-h-[90px] sm:min-h-[70px]" : "min-h-[150px] sm:min-h-[110px]"
+              } rounded-lg font-mono focus:outline-none focus:ring-2 resize-none overflow-y-auto leading-relaxed whitespace-pre-wrap break-words transition-all duration-200 ${
                 isFreeWritingMode ? "focus:ring-amber-500" : "focus:ring-emerald-500"
               } ${
                 darkTheme ? "bg-slate-900 text-slate-100 border border-slate-700" : "bg-white text-slate-900 border border-slate-300"
