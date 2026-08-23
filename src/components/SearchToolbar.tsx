@@ -115,7 +115,7 @@ export const SearchToolbar: React.FC<SearchToolbarProps> = ({
         darkTheme ? "bg-slate-800/95 border-slate-700 text-slate-100" : "bg-slate-100 border-slate-300 text-slate-900"
       }`}
     >
-      <div className="flex items-center flex-1 min-w-[240px] space-x-2">
+      <div className="flex items-center flex-1 min-w-0 sm:min-w-[240px] space-x-2">
         <Search className="w-4 h-4 text-cyan-400 shrink-0" />
         <input
           type="text"

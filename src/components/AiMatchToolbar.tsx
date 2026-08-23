@@ -58,7 +58,7 @@ export const AiMatchToolbar: React.FC<AiMatchToolbarProps> = ({
       }`}
     >
       {/* AI Search Badge & Current Match Info */}
-      <div className="flex items-center flex-1 min-w-[280px] space-x-2.5 overflow-hidden">
+      <div className="flex items-center flex-1 min-w-0 sm:min-w-[280px] space-x-2.5 overflow-hidden">
         <div className="p-1.5 rounded-lg bg-gradient-to-tr from-teal-600 to-emerald-500 text-white shrink-0 shadow-sm flex items-center space-x-1">
           <Sparkles className="w-4 h-4 animate-pulse text-amber-300" />
           <span className="text-[10px] font-mono font-bold tracking-wider uppercase hidden sm:inline">

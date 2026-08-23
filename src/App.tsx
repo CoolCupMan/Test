@@ -21,6 +21,7 @@ import {
 } from "./lib/indexedDbStorage";
 import { splitLinesAsync } from "./lib/performanceUtils";
 import { formatAsChromeHtmlViewer } from "./lib/htmlExportFormatter";
+import { isNativePlatform } from "./lib/nativeFileSystem";
 
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
@@ -272,7 +273,11 @@ export default function App() {
     []
   );
 
-  // Quick Save current file content to storage
+  // Quick Save current file content to storage. On the packaged Android app,
+  // this also writes the same file instantly to public device storage (same
+  // target as Save As > Save Anywhere to Device) so it's kept in sync and
+  // stays reachable from the stock Files app, Amaze, Dateimanager+, etc.
+  // without an extra Save As step every time.
   const handleQuickSave = async () => {
     if (!currentFile) return;
     const newContent = await joinLinesAsync(lines);
@@ -284,7 +289,17 @@ export default function App() {
     };
     setCurrentFile(updatedFile);
     await saveVirtualFile(updatedFile);
-    setSaveToastMessage(`Saved ${updatedFile.name}`);
+
+    if (isNativePlatform()) {
+      const deviceResult = await exportFileToLocalDevice(updatedFile);
+      setSaveToastMessage(
+        deviceResult.ok
+          ? `Saved ${updatedFile.name} (app + device storage)`
+          : `Saved ${updatedFile.name} in-app, but device save failed: ${deviceResult.message}`
+      );
+    } else {
+      setSaveToastMessage(`Saved ${updatedFile.name}`);
+    }
     setTimeout(() => setSaveToastMessage(null), 2500);
   };
 

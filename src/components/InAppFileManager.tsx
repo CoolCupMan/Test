@@ -308,7 +308,7 @@ export const InAppFileManager: React.FC<InAppFileManagerProps> = ({
               value={newFileName}
               onChange={(e) => setNewFileName(e.target.value)}
               placeholder="Filename (e.g. index or log_2026)"
-              className="px-2.5 py-1 text-xs rounded border border-slate-700 bg-slate-900 text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 flex-1 min-w-[160px]"
+              className="px-2.5 py-1 text-xs rounded border border-slate-700 bg-slate-900 text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 flex-1 min-w-0 sm:min-w-[160px]"
               autoFocus
             />
             <select
@@ -344,7 +344,7 @@ export const InAppFileManager: React.FC<InAppFileManagerProps> = ({
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               placeholder="Folder Name"
-              className="px-2.5 py-1 text-xs rounded border border-slate-700 bg-slate-900 text-slate-100 focus:outline-none focus:ring-1 focus:ring-amber-500 flex-1 min-w-[160px]"
+              className="px-2.5 py-1 text-xs rounded border border-slate-700 bg-slate-900 text-slate-100 focus:outline-none focus:ring-1 focus:ring-amber-500 flex-1 min-w-0 sm:min-w-[160px]"
               autoFocus
             />
             <button
