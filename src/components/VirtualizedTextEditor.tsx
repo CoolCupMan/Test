@@ -62,6 +62,8 @@ interface VirtualizedTextEditorProps {
 const LINE_HEIGHT = 24; // Fixed pixel height per line for code mode
 const MESSAGE_CARD_HEIGHT = 28; // Compact line height for continuous vertical message stream
 const MAX_CONTAINER_HEIGHT = 8000000; // 8 Million pixels cap
+const MAX_CHAT_INPUT_CHARS = 1048576; // Upper character limit for the writing window (typed or pasted) — 2^20, comfortably above 1,000,000
+const EDIT_WINDOW_MS = 15 * 60 * 1000; // How long a freshly sent text message stays directly editable
 
 export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   lines,
@@ -156,11 +158,16 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
 
   // Keep the writing box fully visible above the on-screen keyboard —
   // including its emoji panel, which is usually taller than the regular
-  // keyboard. Nothing here declares a resize mode in the Android manifest,
-  // so window.visualViewport is the reliable way to learn how much of the
-  // screen the keyboard is actually covering right now, and shrink/raise
-  // the writing box to fit above it so its first line stays readable
-  // instead of sliding under the keyboard.
+  // keyboard and on some devices (e.g. Ulefone Armor 30's WebView) doesn't
+  // budge the layout by itself. The Android activity now also declares
+  // windowSoftInputMode="adjustResize" so the OS itself shrinks the app's
+  // window when the keyboard opens on most devices/WebView builds; this
+  // visualViewport listener is the belt-and-suspenders layer on top of
+  // that, for WebView builds where the resize either doesn't happen or
+  // reports late. A small fixed buffer is added on top of the measured
+  // keyboard height so the box's first line sits with a visible gap above
+  // the keyboard/emoji panel instead of butting flush against it.
+  const KEYBOARD_INSET_BUFFER_PX = 10;
   const [keyboardInset, setKeyboardInset] = useState(0);
   useEffect(() => {
     if (!isWritingBoxExpanded || typeof window === "undefined" || !window.visualViewport) {
@@ -169,7 +176,8 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     }
     const vv = window.visualViewport;
     const handleViewportChange = () => {
-      setKeyboardInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+      const rawInset = window.innerHeight - vv.height - vv.offsetTop;
+      setKeyboardInset(rawInset > 0 ? rawInset + KEYBOARD_INSET_BUFFER_PX : 0);
     };
     handleViewportChange();
     vv.addEventListener("resize", handleViewportChange);
@@ -613,6 +621,34 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     return `[${dateStr} ${timeStr}]${namePart}: `;
   };
 
+  // Parse a "YYYY-MM-DD HH:MM:SS" timestamp (exactly what generateTimestampStr
+  // produces) back into local-time milliseconds, so we can tell how long ago a
+  // message was actually sent — built from the same local date/time fields
+  // rather than handed to Date() as a string, since "YYYY-MM-DD HH:MM:SS"
+  // parsing isn't consistently reliable across WebView builds.
+  const parseLocalTimestampMs = (timestamp: string): number | null => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})\s(\d{2}):(\d{2}):(\d{2})$/.exec(timestamp.trim());
+    if (!m) return null;
+    const [, y, mo, d, h, mi, s] = m;
+    return new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)).getTime();
+  };
+
+  // Ticks once a minute so the "Edit" affordance on a freshly sent message
+  // disappears again once it ages past the 15-minute edit window, without
+  // needing any other state change to trigger a re-render.
+  const [editWindowNowTick, setEditWindowNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(() => setEditWindowNowTick(Date.now()), 60000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const isMessageEditable = (timestamp: string): boolean => {
+    if (!timestamp) return false;
+    const sentAtMs = parseLocalTimestampMs(timestamp);
+    if (sentAtMs === null) return false;
+    return editWindowNowTick - sentAtMs < EDIT_WINDOW_MS;
+  };
+
   // Fast O(1) Memoized Message Indexer for ChatGPT & Transcript Exports
   const getParsedMessage = useCallback((idx: number, lineStr: string): ParsedMessage => {
     if (typeof lineStr !== "string") {
@@ -856,6 +892,47 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     }).catch(() => {
       setCopiedLineIdx(null);
     });
+  };
+
+  // Multi-message selection for combined copy: tap the "Select" toggle on any
+  // number of text messages to mark them, then hit the floating "Copy
+  // Selected" bar that appears to copy them all at once, in document order,
+  // as one clipboard write. Tapping a toggle again deselects that message.
+  const [multiCopySelection, setMultiCopySelection] = useState<Set<number>>(new Set());
+  const [multiCopyDone, setMultiCopyDone] = useState(false);
+
+  const toggleMultiCopySelection = (e: React.MouseEvent, lineIdx: number) => {
+    e.stopPropagation();
+    setMultiCopySelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(lineIdx)) next.delete(lineIdx);
+      else next.add(lineIdx);
+      return next;
+    });
+  };
+
+  const clearMultiCopySelection = () => setMultiCopySelection(new Set());
+
+  const handleCopyMultiSelected = () => {
+    if (multiCopySelection.size === 0) return;
+    const sortedIdx = Array.from(multiCopySelection).sort((a, b) => a - b);
+    const combined = sortedIdx.map((idx) => (lines[idx] || "").replace(/\r$/, "")).join("\n");
+    navigator.clipboard.writeText(combined).then(() => {
+      setMultiCopyDone(true);
+      setTimeout(() => setMultiCopyDone(false), 2000);
+    }).catch(() => {});
+  };
+
+  // Jump into editing a freshly-sent message (only offered within the
+  // 15-minute edit window) — reuses the existing click-to-place-cursor +
+  // inline edit pipeline, just triggered from an explicit button instead of
+  // requiring the user to know they can tap the line directly.
+  const handleEditRecentMessage = (e: React.MouseEvent, lineIdx: number) => {
+    e.stopPropagation();
+    const raw = (lines[lineIdx] || "").replace(/\r$/, "");
+    const { editableText: text } = extractTimestampPrefix(raw);
+    handleSelectCursorLocation(lineIdx, isFreeWritingMode ? raw.length : text.length);
+    if (!isWritingBoxExpanded) expandWritingBox();
   };
 
   // Select cursor location anywhere in document (without auto-expanding writing box)
@@ -1698,32 +1775,69 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                             </span>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
-                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all shrink-0 select-none ${
-                              copiedLineIdx === actualIdx
-                                ? darkTheme
-                                  ? "bg-emerald-900/90 text-emerald-300 border border-emerald-500/80 shadow-sm"
-                                  : "bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold shadow-sm"
-                                : darkTheme
-                                ? "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white"
-                                : "bg-slate-200 hover:bg-slate-300 text-slate-800 border border-slate-300 hover:text-slate-950"
-                            }`}
-                            title="Copy this message (from timestamp & name onwards)"
-                          >
-                            {copiedLineIdx === actualIdx ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-400 shrink-0" />
-                                <span>Copied!</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3 text-slate-400 shrink-0" />
-                                <span>Copy</span>
-                              </>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => toggleMultiCopySelection(e, actualIdx)}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center transition-all select-none border ${
+                                multiCopySelection.has(actualIdx)
+                                  ? "bg-indigo-600 text-white border-indigo-400 shadow-sm"
+                                  : darkTheme
+                                  ? "bg-slate-800/80 hover:bg-slate-700 text-slate-400 border-slate-700 hover:text-white"
+                                  : "bg-slate-200 hover:bg-slate-300 text-slate-600 border-slate-300 hover:text-slate-950"
+                              }`}
+                              title={multiCopySelection.has(actualIdx) ? "Deselect from multi-copy" : "Select for multi-copy"}
+                            >
+                              {multiCopySelection.has(actualIdx) ? (
+                                <Check className="w-3 h-3 shrink-0" />
+                              ) : (
+                                <span className="w-3 h-3 rounded-sm border border-current shrink-0" />
+                              )}
+                            </button>
+
+                            {parsed.timestamp && isMessageEditable(parsed.timestamp) && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleEditRecentMessage(e, actualIdx)}
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
+                                  darkTheme
+                                    ? "bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-700/80"
+                                    : "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300"
+                                }`}
+                                title="Edit this message (available for 15 minutes after sending)"
+                              >
+                                <PenTool className="w-3 h-3 shrink-0" />
+                                <span>Edit</span>
+                              </button>
                             )}
-                          </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none ${
+                                copiedLineIdx === actualIdx
+                                  ? darkTheme
+                                    ? "bg-emerald-900/90 text-emerald-300 border border-emerald-500/80 shadow-sm"
+                                    : "bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold shadow-sm"
+                                  : darkTheme
+                                  ? "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white"
+                                  : "bg-slate-200 hover:bg-slate-300 text-slate-800 border border-slate-300 hover:text-slate-950"
+                              }`}
+                              title="Copy this message (from timestamp & name onwards)"
+                            >
+                              {copiedLineIdx === actualIdx ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                                  <span>Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3 text-slate-400 shrink-0" />
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2043,28 +2157,65 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                               </span>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
-                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium flex items-center space-x-1 transition-all shrink-0 select-none ${
-                                copiedLineIdx === actualIdx
-                                  ? "bg-emerald-900/90 text-emerald-300 border border-emerald-500/80 shadow-sm"
-                                  : "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white"
-                              }`}
-                              title="Copy this message (from timestamp & name onwards)"
-                            >
-                              {copiedLineIdx === actualIdx ? (
-                                <>
-                                  <Check className="w-3 h-3 text-emerald-400 shrink-0" />
-                                  <span>Copied!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3 h-3 text-slate-400 shrink-0" />
-                                  <span>Copy</span>
-                                </>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => toggleMultiCopySelection(e, actualIdx)}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center transition-all select-none border ${
+                                  multiCopySelection.has(actualIdx)
+                                    ? "bg-indigo-600 text-white border-indigo-400 shadow-sm"
+                                    : darkTheme
+                                    ? "bg-slate-800/80 hover:bg-slate-700 text-slate-400 border-slate-700 hover:text-white"
+                                    : "bg-slate-200 hover:bg-slate-300 text-slate-600 border-slate-300 hover:text-slate-950"
+                                }`}
+                                title={multiCopySelection.has(actualIdx) ? "Deselect from multi-copy" : "Select for multi-copy"}
+                              >
+                                {multiCopySelection.has(actualIdx) ? (
+                                  <Check className="w-3 h-3 shrink-0" />
+                                ) : (
+                                  <span className="w-3 h-3 rounded-sm border border-current shrink-0" />
+                                )}
+                              </button>
+
+                              {parsed.timestamp && isMessageEditable(parsed.timestamp) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleEditRecentMessage(e, actualIdx)}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
+                                    darkTheme
+                                      ? "bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-700/80"
+                                      : "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300"
+                                  }`}
+                                  title="Edit this message (available for 15 minutes after sending)"
+                                >
+                                  <PenTool className="w-3 h-3 shrink-0" />
+                                  <span>Edit</span>
+                                </button>
                               )}
-                            </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium flex items-center space-x-1 transition-all select-none ${
+                                  copiedLineIdx === actualIdx
+                                    ? "bg-emerald-900/90 text-emerald-300 border border-emerald-500/80 shadow-sm"
+                                    : "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white"
+                                }`}
+                                title="Copy this message (from timestamp & name onwards)"
+                              >
+                                {copiedLineIdx === actualIdx ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                                    <span>Copied!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3 text-slate-400 shrink-0" />
+                                    <span>Copy</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -2254,6 +2405,47 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
         </div>
       )}
 
+      {/* FLOATING MULTI-MESSAGE COPY BAR — appears once one or more text
+          messages are marked with their "Select" toggle, letting all of
+          them be copied together as one clipboard write in document order. */}
+      {multiCopySelection.size > 0 && (
+        <div className="fixed bottom-6 left-6 z-40 flex items-center gap-2 px-3 py-2 rounded-lg shadow-2xl border bg-indigo-950/95 border-indigo-500/70 backdrop-blur-md text-xs font-mono">
+          <span className="text-indigo-200 font-semibold whitespace-nowrap">
+            {multiCopySelection.size} message{multiCopySelection.size === 1 ? "" : "s"} selected
+          </span>
+          <button
+            type="button"
+            onClick={handleCopyMultiSelected}
+            className={`px-2.5 py-1 rounded-md font-semibold flex items-center space-x-1.5 transition-all shrink-0 ${
+              multiCopyDone
+                ? "bg-emerald-700 text-emerald-100 border border-emerald-400"
+                : "bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400"
+            }`}
+            title="Copy all selected messages, in order, as one clipboard write"
+          >
+            {multiCopyDone ? (
+              <>
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                <span>Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5 shrink-0" />
+                <span>Copy Selected</span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={clearMultiCopySelection}
+            className="p-1 rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors shrink-0"
+            title="Clear selection"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* FLOATING BOTTOM TEXT WRITING BOX (MINIATURE BY DEFAULT FOR FULL READING VISIBILITY) */}
       {!isWritingBoxExpanded ? (
         <div
@@ -2375,7 +2567,17 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
               ref={chatInputRef}
               value={chatInput}
               rows={keyboardInset > 0 ? 3 : 6}
-              onChange={(e) => setChatInput(e.target.value)}
+              maxLength={MAX_CHAT_INPUT_CHARS}
+              onChange={(e) => {
+                const next = e.target.value;
+                // Same upper limit for typing AND pasting — a paste that would push
+                // past it is simply clamped here too, since paste fires this same
+                // onChange with the already-merged value.
+                setChatInput(next.length > MAX_CHAT_INPUT_CHARS ? next.slice(0, MAX_CHAT_INPUT_CHARS) : next);
+                if (chatInputRef.current) {
+                  chatInputRef.current.scrollTop = chatInputRef.current.scrollHeight;
+                }
+              }}
               onFocus={() => {
                 if (chatInputRef.current) {
                   chatInputRef.current.scrollTop = chatInputRef.current.scrollHeight;
