@@ -894,6 +894,35 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     });
   };
 
+  // Copy an entire text message — its timestamp+name line PLUS every
+  // continuation line that belongs to it (e.g. a pasted multi-line/code
+  // message) — in one click, instead of having to copy each line
+  // separately. Only offered on a message's first (timestamped) line; it
+  // walks forward collecting plain continuation lines and stops at the
+  // first blank line, the next message's own timestamp, or end of document.
+  // The existing single-line Copy button is untouched and still copies
+  // just that one line.
+  const [copiedFullMessageIdx, setCopiedFullMessageIdx] = useState<number | null>(null);
+
+  const handleCopyFullMessage = (e: React.MouseEvent, startIdx: number) => {
+    e.stopPropagation();
+    const collected: string[] = [];
+    for (let i = startIdx; i < lines.length; i++) {
+      const raw = (lines[i] || "").replace(/\r$/, "");
+      if (i > startIdx) {
+        if (raw.trim() === "") break;
+        if (extractTimestampPrefix(raw).timestampPrefix) break;
+      }
+      collected.push(raw);
+    }
+    const combined = collected.join("\n");
+    if (!combined) return;
+    navigator.clipboard.writeText(combined).then(() => {
+      setCopiedFullMessageIdx(startIdx);
+      setTimeout(() => setCopiedFullMessageIdx(null), 2000);
+    }).catch(() => {});
+  };
+
   // Multi-message selection for combined copy: tap the "Select" toggle on any
   // number of text messages to mark them, then hit the floating "Copy
   // Selected" bar that appears to copy them all at once, in document order,
@@ -1811,6 +1840,35 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                               </button>
                             )}
 
+                            {parsed.timestamp && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopyFullMessage(e, actualIdx)}
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
+                                  copiedFullMessageIdx === actualIdx
+                                    ? darkTheme
+                                      ? "bg-emerald-900/90 text-emerald-300 border-emerald-500/80 shadow-sm"
+                                      : "bg-emerald-100 text-emerald-900 border-emerald-400 font-bold shadow-sm"
+                                    : darkTheme
+                                    ? "bg-teal-950/80 hover:bg-teal-900 text-teal-300 border-teal-700/80"
+                                    : "bg-teal-100 hover:bg-teal-200 text-teal-900 border-teal-300"
+                                }`}
+                                title="Copy this entire message — timestamp, name, and every one of its lines — in one click, no need to copy each line separately"
+                              >
+                                {copiedFullMessageIdx === actualIdx ? (
+                                  <>
+                                    <Check className="w-3 h-3 shrink-0" />
+                                    <span>Copied!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clipboard className="w-3 h-3 shrink-0" />
+                                    <span>Copy Full</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
@@ -1823,7 +1881,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                   ? "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white"
                                   : "bg-slate-200 hover:bg-slate-300 text-slate-800 border border-slate-300 hover:text-slate-950"
                               }`}
-                              title="Copy this message (from timestamp & name onwards)"
+                              title="Copy just this one line"
                             >
                               {copiedLineIdx === actualIdx ? (
                                 <>
@@ -2200,6 +2258,31 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                 </button>
                               )}
 
+                              {parsed.timestamp && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleCopyFullMessage(e, actualIdx)}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
+                                    copiedFullMessageIdx === actualIdx
+                                      ? "bg-emerald-900/90 text-emerald-300 border-emerald-500/80 shadow-sm"
+                                      : "bg-teal-950/80 hover:bg-teal-900 text-teal-300 border-teal-700/80"
+                                  }`}
+                                  title="Copy this entire message — timestamp, name, and every one of its lines — in one click, no need to copy each line separately"
+                                >
+                                  {copiedFullMessageIdx === actualIdx ? (
+                                    <>
+                                      <Check className="w-3 h-3 shrink-0" />
+                                      <span>Copied!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Clipboard className="w-3 h-3 shrink-0" />
+                                      <span>Copy Full</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
@@ -2208,7 +2291,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                     ? "bg-emerald-900/90 text-emerald-300 border border-emerald-500/80 shadow-sm"
                                     : "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white"
                                 }`}
-                                title="Copy this message (from timestamp & name onwards)"
+                                title="Copy just this one line"
                               >
                                 {copiedLineIdx === actualIdx ? (
                                   <>
