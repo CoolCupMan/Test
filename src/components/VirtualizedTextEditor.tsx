@@ -1972,12 +1972,19 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
               <div
                 style={{
                   position: "absolute",
-                  top: 0,
+                  // Positioned via `top`, not `transform: translateY(...)`. Large
+                  // documents push this offset into the millions of pixels, and a
+                  // GPU-composited transform at that scale loses precision on
+                  // weaker/older GPU drivers (common on budget/rugged Android
+                  // devices) — the rendered lines can flicker or vanish entirely
+                  // mid-scroll. `top` goes through normal layout instead, which
+                  // doesn't hit that ceiling, at the cost of not being a
+                  // GPU-composited layer (irrelevant here since this only moves
+                  // on scroll/state changes, never a continuous animation).
+                  top: `${offsetY}px`,
                   left: 0,
                   minWidth: "100%",
                   width: wordWrap ? "100%" : "max-content",
-                  transform: `translateY(${offsetY}px)`,
-                  willChange: "transform",
                 }}
               >
                 {visibleLines.map((lineContent, idx) => {
