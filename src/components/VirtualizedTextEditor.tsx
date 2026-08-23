@@ -1804,47 +1804,81 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={(e) => toggleMultiCopySelection(e, actualIdx)}
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center transition-all select-none border ${
-                                multiCopySelection.has(actualIdx)
-                                  ? "bg-indigo-600 text-white border-indigo-400 shadow-sm"
-                                  : darkTheme
-                                  ? "bg-slate-800/80 hover:bg-slate-700 text-slate-400 border-slate-700 hover:text-white"
-                                  : "bg-slate-200 hover:bg-slate-300 text-slate-600 border-slate-300 hover:text-slate-950"
-                              }`}
-                              title={multiCopySelection.has(actualIdx) ? "Deselect from multi-copy" : "Select for multi-copy"}
-                            >
-                              {multiCopySelection.has(actualIdx) ? (
-                                <Check className="w-3 h-3 shrink-0" />
-                              ) : (
-                                <span className="w-3 h-3 rounded-sm border border-current shrink-0" />
-                              )}
-                            </button>
-
-                            {parsed.timestamp && isMessageEditable(parsed.timestamp) && (
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <div className="flex items-center gap-1">
                               <button
                                 type="button"
-                                onClick={(e) => handleEditRecentMessage(e, actualIdx)}
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
-                                  darkTheme
-                                    ? "bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-700/80"
-                                    : "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300"
+                                onClick={(e) => toggleMultiCopySelection(e, actualIdx)}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center transition-all select-none border ${
+                                  multiCopySelection.has(actualIdx)
+                                    ? "bg-indigo-600 text-white border-indigo-400 shadow-sm"
+                                    : darkTheme
+                                    ? "bg-slate-800/80 hover:bg-slate-700 text-slate-400 border-slate-700 hover:text-white"
+                                    : "bg-slate-200 hover:bg-slate-300 text-slate-600 border-slate-300 hover:text-slate-950"
                                 }`}
-                                title="Edit this message (available for 15 minutes after sending)"
+                                title={multiCopySelection.has(actualIdx) ? "Deselect from multi-copy" : "Select for multi-copy"}
                               >
-                                <PenTool className="w-3 h-3 shrink-0" />
-                                <span>Edit</span>
+                                {multiCopySelection.has(actualIdx) ? (
+                                  <Check className="w-3 h-3 shrink-0" />
+                                ) : (
+                                  <span className="w-3 h-3 rounded-sm border border-current shrink-0" />
+                                )}
                               </button>
-                            )}
 
+                              {parsed.timestamp && isMessageEditable(parsed.timestamp) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleEditRecentMessage(e, actualIdx)}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
+                                    darkTheme
+                                      ? "bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-700/80"
+                                      : "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300"
+                                  }`}
+                                  title="Edit this message (available for 15 minutes after sending)"
+                                >
+                                  <PenTool className="w-3 h-3 shrink-0" />
+                                  <span>Edit</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none ${
+                                  copiedLineIdx === actualIdx
+                                    ? darkTheme
+                                      ? "bg-emerald-900/90 text-emerald-300 border border-emerald-500/80 shadow-sm"
+                                      : "bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold shadow-sm"
+                                    : darkTheme
+                                    ? "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white"
+                                    : "bg-slate-200 hover:bg-slate-300 text-slate-800 border border-slate-300 hover:text-slate-950"
+                                }`}
+                                title="Copy just this one line"
+                              >
+                                {copiedLineIdx === actualIdx ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                                    <span>Copied!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3 text-slate-400 shrink-0" />
+                                    <span>Copy</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            {/* Copy Full sits on its own row below Select/Copy, with its
+                                label stacked vertically ("Copy" over "Full") instead of
+                                side-by-side, so the whole action cluster stays narrow and
+                                the message text next to it has room to stay readable
+                                instead of being squeezed. */}
                             {parsed.timestamp && (
                               <button
                                 type="button"
                                 onClick={(e) => handleCopyFullMessage(e, actualIdx)}
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold flex flex-col items-center leading-tight transition-all select-none border ${
                                   copiedFullMessageIdx === actualIdx
                                     ? darkTheme
                                       ? "bg-emerald-900/90 text-emerald-300 border-emerald-500/80 shadow-sm"
@@ -1863,38 +1897,12 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                 ) : (
                                   <>
                                     <Clipboard className="w-3 h-3 shrink-0" />
-                                    <span>Copy Full</span>
+                                    <span>Copy</span>
+                                    <span>Full</span>
                                   </>
                                 )}
                               </button>
                             )}
-
-                            <button
-                              type="button"
-                              onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
-                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none ${
-                                copiedLineIdx === actualIdx
-                                  ? darkTheme
-                                    ? "bg-emerald-900/90 text-emerald-300 border border-emerald-500/80 shadow-sm"
-                                    : "bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold shadow-sm"
-                                  : darkTheme
-                                  ? "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white"
-                                  : "bg-slate-200 hover:bg-slate-300 text-slate-800 border border-slate-300 hover:text-slate-950"
-                              }`}
-                              title="Copy just this one line"
-                            >
-                              {copiedLineIdx === actualIdx ? (
-                                <>
-                                  <Check className="w-3 h-3 text-emerald-400 shrink-0" />
-                                  <span>Copied!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3 h-3 text-slate-400 shrink-0" />
-                                  <span>Copy</span>
-                                </>
-                              )}
-                            </button>
                           </div>
                         </div>
                       )}
@@ -2222,47 +2230,72 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                onClick={(e) => toggleMultiCopySelection(e, actualIdx)}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center transition-all select-none border ${
-                                  multiCopySelection.has(actualIdx)
-                                    ? "bg-indigo-600 text-white border-indigo-400 shadow-sm"
-                                    : darkTheme
-                                    ? "bg-slate-800/80 hover:bg-slate-700 text-slate-400 border-slate-700 hover:text-white"
-                                    : "bg-slate-200 hover:bg-slate-300 text-slate-600 border-slate-300 hover:text-slate-950"
-                                }`}
-                                title={multiCopySelection.has(actualIdx) ? "Deselect from multi-copy" : "Select for multi-copy"}
-                              >
-                                {multiCopySelection.has(actualIdx) ? (
-                                  <Check className="w-3 h-3 shrink-0" />
-                                ) : (
-                                  <span className="w-3 h-3 rounded-sm border border-current shrink-0" />
-                                )}
-                              </button>
-
-                              {parsed.timestamp && isMessageEditable(parsed.timestamp) && (
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <div className="flex items-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={(e) => handleEditRecentMessage(e, actualIdx)}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
-                                    darkTheme
-                                      ? "bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-700/80"
-                                      : "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300"
+                                  onClick={(e) => toggleMultiCopySelection(e, actualIdx)}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center transition-all select-none border ${
+                                    multiCopySelection.has(actualIdx)
+                                      ? "bg-indigo-600 text-white border-indigo-400 shadow-sm"
+                                      : darkTheme
+                                      ? "bg-slate-800/80 hover:bg-slate-700 text-slate-400 border-slate-700 hover:text-white"
+                                      : "bg-slate-200 hover:bg-slate-300 text-slate-600 border-slate-300 hover:text-slate-950"
                                   }`}
-                                  title="Edit this message (available for 15 minutes after sending)"
+                                  title={multiCopySelection.has(actualIdx) ? "Deselect from multi-copy" : "Select for multi-copy"}
                                 >
-                                  <PenTool className="w-3 h-3 shrink-0" />
-                                  <span>Edit</span>
+                                  {multiCopySelection.has(actualIdx) ? (
+                                    <Check className="w-3 h-3 shrink-0" />
+                                  ) : (
+                                    <span className="w-3 h-3 rounded-sm border border-current shrink-0" />
+                                  )}
                                 </button>
-                              )}
+
+                                {parsed.timestamp && isMessageEditable(parsed.timestamp) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleEditRecentMessage(e, actualIdx)}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
+                                      darkTheme
+                                        ? "bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-700/80"
+                                        : "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300"
+                                    }`}
+                                    title="Edit this message (available for 15 minutes after sending)"
+                                  >
+                                    <PenTool className="w-3 h-3 shrink-0" />
+                                    <span>Edit</span>
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium flex items-center space-x-1 transition-all select-none ${
+                                    copiedLineIdx === actualIdx
+                                      ? "bg-emerald-900/90 text-emerald-300 border border-emerald-500/80 shadow-sm"
+                                      : "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white"
+                                  }`}
+                                  title="Copy just this one line"
+                                >
+                                  {copiedLineIdx === actualIdx ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                                      <span>Copied!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3 h-3 text-slate-400 shrink-0" />
+                                      <span>Copy</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
 
                               {parsed.timestamp && (
                                 <button
                                   type="button"
                                   onClick={(e) => handleCopyFullMessage(e, actualIdx)}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold flex flex-col items-center leading-tight transition-all select-none border ${
                                     copiedFullMessageIdx === actualIdx
                                       ? "bg-emerald-900/90 text-emerald-300 border-emerald-500/80 shadow-sm"
                                       : "bg-teal-950/80 hover:bg-teal-900 text-teal-300 border-teal-700/80"
@@ -2277,34 +2310,12 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                   ) : (
                                     <>
                                       <Clipboard className="w-3 h-3 shrink-0" />
-                                      <span>Copy Full</span>
+                                      <span>Copy</span>
+                                      <span>Full</span>
                                     </>
                                   )}
                                 </button>
                               )}
-
-                              <button
-                                type="button"
-                                onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium flex items-center space-x-1 transition-all select-none ${
-                                  copiedLineIdx === actualIdx
-                                    ? "bg-emerald-900/90 text-emerald-300 border border-emerald-500/80 shadow-sm"
-                                    : "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:text-white"
-                                }`}
-                                title="Copy just this one line"
-                              >
-                                {copiedLineIdx === actualIdx ? (
-                                  <>
-                                    <Check className="w-3 h-3 text-emerald-400 shrink-0" />
-                                    <span>Copied!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3 h-3 text-slate-400 shrink-0" />
-                                    <span>Copy</span>
-                                  </>
-                                )}
-                              </button>
                             </div>
                           </div>
                         )}
