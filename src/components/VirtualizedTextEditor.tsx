@@ -62,7 +62,16 @@ interface VirtualizedTextEditorProps {
 const LINE_HEIGHT = 24; // Fixed pixel height per line for code mode
 const MESSAGE_CARD_HEIGHT = 28; // Compact line height for continuous vertical message stream
 const MAX_CONTAINER_HEIGHT = 8000000; // 8 Million pixels cap
-const MAX_CHAT_INPUT_CHARS = 1048576; // Upper character limit for the writing window (typed or pasted) — 2^20, comfortably above 1,000,000
+// Upper character limit for the writing window (typed or pasted). Sized in
+// CHARACTERS, but the real requirement is LINES: a single message can
+// legitimately be 1,000,000+ lines (e.g. pasting a large file's worth of
+// content to send at once), and lines vary a lot in length — a cap sized
+// for "1,000,000 characters" was silently truncating a 1,000,000-line paste
+// down to only as many whole lines as fit in that budget (as few as a few
+// hundred, for longer lines) well before the line-count ever mattered. 100
+// million characters comfortably fits 1,000,000+ lines at realistic average
+// line lengths while still keeping some finite, sane upper bound.
+const MAX_CHAT_INPUT_CHARS = 100000000;
 const EDIT_WINDOW_MS = 15 * 60 * 1000; // How long a freshly sent text message stays directly editable
 
 export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
@@ -1142,7 +1151,14 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
         const targetLine = lines[activeLineIdx] || "";
         if (targetLine.trim() === "") {
           // Fill target empty line
-          updatedLines.splice(activeLineIdx, 1, ...entries);
+          // Rebuilt via array-literal spread rather than
+          // splice(idx, n, ...entries) / push(...entries) — spreading a
+          // huge `entries` array (a message can legitimately be
+          // 1,000,000+ lines) into a FUNCTION CALL blows past the JS
+          // engine's argument-count limit and throws; spreading into an
+          // array literal has no such limit, so this scales to any
+          // document/message size the editor otherwise supports.
+          updatedLines = [...updatedLines.slice(0, activeLineIdx), ...entries, ...updatedLines.slice(activeLineIdx + 1)];
           const newIdx = activeLineIdx + entries.length - 1;
           setActiveLineIdx(newIdx);
           setActiveColIdx(lastEntryText.length);
@@ -1151,14 +1167,14 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
           // Split line at cursor column and insert timestamped message as its own new line(s) in between
           const beforeText = targetLine.slice(0, activeColIdx);
           const afterText = targetLine.slice(activeColIdx);
-          updatedLines.splice(activeLineIdx, 1, beforeText, ...entries, afterText);
+          updatedLines = [...updatedLines.slice(0, activeLineIdx), beforeText, ...entries, afterText, ...updatedLines.slice(activeLineIdx + 1)];
           const newIdx = activeLineIdx + entries.length;
           setActiveLineIdx(newIdx);
           setActiveColIdx(lastEntryText.length);
           focusLineIdx = newIdx;
         } else {
           // Insert as new message line(s) directly after active line
-          updatedLines.splice(activeLineIdx + 1, 0, ...entries);
+          updatedLines = [...updatedLines.slice(0, activeLineIdx + 1), ...entries, ...updatedLines.slice(activeLineIdx + 1)];
           const newIdx = activeLineIdx + entries.length;
           setActiveLineIdx(newIdx);
           setActiveColIdx(lastEntryText.length);
@@ -1166,7 +1182,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
         }
       } else {
         // Append new message line(s) at bottom of file
-        updatedLines.push(...entries);
+        updatedLines = [...updatedLines, ...entries];
         const newIdx = updatedLines.length - 1;
         setActiveLineIdx(newIdx);
         setActiveColIdx(lastEntryText.length);
@@ -1177,19 +1193,19 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
       if (activeLineIdx !== null && activeLineIdx < lines.length) {
         const targetLine = lines[activeLineIdx] || "";
         if (targetLine.trim() === "") {
-          updatedLines.splice(activeLineIdx, 1, ...entries);
+          updatedLines = [...updatedLines.slice(0, activeLineIdx), ...entries, ...updatedLines.slice(activeLineIdx + 1)];
           focusLineIdx = activeLineIdx + entries.length - 1;
         } else if (activeColIdx !== null && activeColIdx > 0 && activeColIdx < targetLine.length) {
           const beforeText = targetLine.slice(0, activeColIdx);
           const afterText = targetLine.slice(activeColIdx);
-          updatedLines.splice(activeLineIdx, 1, beforeText, ...entries, afterText);
+          updatedLines = [...updatedLines.slice(0, activeLineIdx), beforeText, ...entries, afterText, ...updatedLines.slice(activeLineIdx + 1)];
           focusLineIdx = activeLineIdx + entries.length;
         } else {
-          updatedLines.splice(activeLineIdx + 1, 0, ...entries);
+          updatedLines = [...updatedLines.slice(0, activeLineIdx + 1), ...entries, ...updatedLines.slice(activeLineIdx + 1)];
           focusLineIdx = activeLineIdx + entries.length;
         }
       } else {
-        updatedLines.push(...entries);
+        updatedLines = [...updatedLines, ...entries];
         focusLineIdx = updatedLines.length - 1;
       }
 
@@ -1272,8 +1288,13 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
       const pastedLines = clipText.split("\n");
       let updated = [...lines];
 
+      // Array-literal spread, not splice(idx, n, ...pastedLines) — a
+      // clipboard paste can legitimately be 1,000,000+ lines, and spreading
+      // that many into a function call blows past the JS engine's
+      // argument-count limit and throws. Spreading into an array literal
+      // has no such limit.
       if (activeLineIdx !== null && activeLineIdx < lines.length) {
-        updated.splice(activeLineIdx + 1, 0, ...pastedLines);
+        updated = [...updated.slice(0, activeLineIdx + 1), ...pastedLines, ...updated.slice(activeLineIdx + 1)];
       } else {
         updated = [...updated, ...pastedLines];
       }
