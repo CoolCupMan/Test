@@ -215,9 +215,24 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   // Fast Memoization Cache for ChatGPT / Message parsing
   const messageCacheRef = useRef<LRUMap<number, ParsedMessage>>(new LRUMap<number, ParsedMessage>(20000));
 
-  useEffect(() => {
+  // Invalidate the parse cache the instant the document actually changes —
+  // synchronously, during render, rather than in a useEffect. A useEffect
+  // only runs after the browser paints, so the very first render after an
+  // edit that shifts existing line indices (e.g. sending/pasting a message
+  // anywhere except the very end of the document) would still read the OLD
+  // cached parses for those now-different indices: the tail of the document
+  // (exactly what's on screen right after the auto-scroll-to-bottom that
+  // follows a send) rendered stale/wrong content instead of the message
+  // that was actually just sent, until the effect caught up a frame later —
+  // and depending on timing, that stale frame is what stuck. Clearing it
+  // here, before any getParsedMessage() call this render can happen, means
+  // every render always parses against the CURRENT lines, with no window
+  // for stale content to appear at all.
+  const prevLinesRef = useRef(lines);
+  if (prevLinesRef.current !== lines) {
     messageCacheRef.current.clear();
-  }, [lines]);
+    prevLinesRef.current = lines;
+  }
 
   // Apply change with history recording
   const applyChange = (newLines: string[]) => {
