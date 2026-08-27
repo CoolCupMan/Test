@@ -1,4 +1,4 @@
-package app.binarycore.editor3dx10;
+package app.binarycore.editor3dx11;
 
 import com.getcapacitor.BridgeActivity;
 

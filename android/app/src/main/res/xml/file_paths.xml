@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Scopes the app's FileProvider (see AndroidManifest.xml) to exactly the
+  folder this app ever reads or writes on shared storage — Documents/ (see
+  src/lib/nativeFileSystem.ts). The stock Capacitor scaffold this project
+  started from defaulted <external-path> to the entire external storage
+  root ("."), which — combined with grantUriPermissions="true" — meant any
+  URI this app ever handed to another app (Share, "Open with", etc.) could
+  in principle reach far more of the device's shared storage than the app
+  actually needs, including files belonging to other apps entirely. Since
+  the provider itself is exported="false", nothing outside this app could
+  already query it directly; this just removes the unnecessary broad grant
+  scope so it can never be an issue on any device, old or new, without
+  changing anything about how Save/Save As/Quick Save actually work.
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <external-path name="documents" path="Documents/" />
+    <cache-path name="cache" path="." />
 </paths>
