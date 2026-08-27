@@ -69,7 +69,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
       <div
-        className={`w-full max-w-lg rounded-xl border shadow-2xl flex flex-col overflow-hidden ${
+        className={`w-full max-w-lg max-h-[90vh] rounded-xl border shadow-2xl flex flex-col overflow-hidden ${
           darkTheme ? "bg-slate-900 border-slate-800 text-slate-100" : "bg-white border-slate-200 text-slate-900"
         }`}
       >
@@ -86,7 +86,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSave} className="p-4 space-y-4 text-xs sm:text-sm">
+        <form onSubmit={handleSave} className="p-4 space-y-4 text-xs sm:text-sm overflow-y-auto flex-1 min-h-0">
           {/* Language Selector */}
           <div className="space-y-1">
             <label className="font-semibold text-slate-300 flex items-center space-x-1.5">
