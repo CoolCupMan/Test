@@ -43,6 +43,48 @@ async function ensureStoragePermission(): Promise<boolean> {
   }
 }
 
+export interface DiskAccessStatus {
+  granted: boolean;
+  message: string;
+}
+
+// Explicit, standalone permission check/request for the Settings screen's
+// "Grant Disk Access" button — separate from saveFileToPublicStorage's own
+// automatic check above, which keeps working exactly as before (Save/Save
+// As are untouched). Some devices/Android skins (reported: Ulefone rugged
+// phones) don't reliably surface the OS permission dialog when it's
+// requested implicitly in the middle of a save; asking for it explicitly,
+// once, ahead of time avoids depending on that. Once Android has granted
+// it, checkPermissions() keeps reporting "granted" on every future check —
+// there's nothing to re-request, so this is genuinely a one-time action.
+export async function checkDiskAccessStatus(): Promise<DiskAccessStatus> {
+  try {
+    const status = await Filesystem.checkPermissions();
+    return status.publicStorage === "granted"
+      ? { granted: true, message: "Full disk access already granted." }
+      : { granted: false, message: "Not yet granted." };
+  } catch {
+    // Plugin/Android version doesn't implement permission checks (not
+    // needed there, e.g. Android 13+) — nothing to grant, already fine.
+    return { granted: true, message: "Not required on this Android version." };
+  }
+}
+
+export async function requestFullDiskAccess(): Promise<DiskAccessStatus> {
+  try {
+    const status = await Filesystem.checkPermissions();
+    if (status.publicStorage === "granted") {
+      return { granted: true, message: "Full disk access already granted." };
+    }
+    const requested = await Filesystem.requestPermissions();
+    return requested.publicStorage === "granted"
+      ? { granted: true, message: "Full disk access granted." }
+      : { granted: false, message: "Permission denied — grant it in Android Settings > Apps > binarycore3d3x > Permissions." };
+  } catch {
+    return { granted: true, message: "Not required on this Android version." };
+  }
+}
+
 export async function saveFileToPublicStorage(file: VirtualFile): Promise<NativeSaveResult> {
   try {
     const granted = await ensureStoragePermission();

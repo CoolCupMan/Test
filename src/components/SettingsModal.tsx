@@ -1,7 +1,8 @@
-import React, { useState } from "react";
-import { Settings, User, RotateCcw, Sliders, Moon, Sun, X, Globe } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Settings, User, RotateCcw, Sliders, Moon, Sun, X, Globe, HardDrive, Check } from "lucide-react";
 import { EditorSession } from "../types";
 import { t, SUPPORTED_LANGUAGES } from "../lib/i18n";
+import { isNativePlatform, checkDiskAccessStatus, requestFullDiskAccess } from "../lib/nativeFileSystem";
 
 interface SettingsModalProps {
   session: EditorSession;
@@ -26,6 +27,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Use the locally-edited (not-yet-saved) language so the labels in this
   // modal preview the switch immediately, before Save commits it app-wide.
   const lang = language;
+
+  // Full Disk Access — a standalone, explicit, one-time permission request,
+  // entirely separate from Save/Save As's own automatic check (unchanged).
+  // Some devices/Android skins (reported on Ulefone rugged phones) don't
+  // reliably surface the OS permission prompt when it's requested
+  // implicitly mid-save, so this lets it be granted explicitly ahead of
+  // time instead. Native-only: the underlying permission doesn't exist on
+  // the web build.
+  const [diskAccessGranted, setDiskAccessGranted] = useState<boolean | null>(null);
+  const [diskAccessMessage, setDiskAccessMessage] = useState<string | null>(null);
+  const [diskAccessChecking, setDiskAccessChecking] = useState(false);
+
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    checkDiskAccessStatus().then((status) => setDiskAccessGranted(status.granted));
+  }, []);
+
+  const handleRequestDiskAccess = async () => {
+    setDiskAccessChecking(true);
+    setDiskAccessMessage(null);
+    const status = await requestFullDiskAccess();
+    setDiskAccessGranted(status.granted);
+    setDiskAccessMessage(status.message);
+    setDiskAccessChecking(false);
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,6 +214,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <RotateCcw className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Grant Disk Access — standalone, explicit, one-time storage
+              permission request for devices (e.g. Ulefone rugged phones)
+              where the automatic prompt during Save/Save As doesn't
+              reliably surface. Entirely separate control: Save, Save As,
+              and their floppy-disk buttons are completely untouched. */}
+          {isNativePlatform() && (
+            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/40 border border-slate-700/60">
+              <div>
+                <div className="font-semibold text-slate-200">{t(lang, "diskAccessBtn")}</div>
+                <div className="text-[11px] text-slate-400">
+                  One-time storage permission for saving text files onto the phone — helps on devices (e.g. Ulefone) where it isn't reliably prompted during Save
+                </div>
+                {diskAccessMessage && (
+                  <div className="text-[11px] text-emerald-400 mt-0.5">{diskAccessMessage}</div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleRequestDiskAccess}
+                disabled={diskAccessChecking || diskAccessGranted === true}
+                className={`p-2 rounded-lg border transition-colors shrink-0 disabled:opacity-70 ${
+                  diskAccessGranted === true
+                    ? "bg-emerald-900/60 border-emerald-600 text-emerald-400"
+                    : "bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600"
+                }`}
+                title={t(lang, "diskAccessBtn")}
+              >
+                {diskAccessGranted === true ? <Check className="w-4 h-4" /> : <HardDrive className="w-4 h-4" />}
+              </button>
+            </div>
+          )}
 
           {/* Submit */}
           <div className="flex justify-end pt-2">
