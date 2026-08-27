@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import {
   Send,
   Clock,
@@ -380,6 +380,30 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     offsetY = (startIndex / denom) * Math.max(0, totalHeight - containerHeight);
   }
   if (isNaN(offsetY) || !isFinite(offsetY) || offsetY < 0) offsetY = 0;
+
+  // Keep the real (native) scroll position and our `scrollTop` state
+  // consistent with whatever document is CURRENTLY loaded. This component
+  // instance persists across opening/clearing/pasting different documents,
+  // so `scrollTop` can be left over from a previous, very differently-sized
+  // document (e.g. scrolled deep into a large file, then that file is
+  // cleared/replaced and a large amount of text is typed or pasted into what
+  // was an empty document). Our virtualization math always clamps startIndex
+  // to the CURRENT document's line range, but the real DOM scrollTop doesn't
+  // get reset just because content changed underneath it — so the rendered
+  // window and the browser's actual scrolled-to position could disagree
+  // about where "here" is, and the freshly typed/pasted text ends up
+  // rendered outside what's currently scrolled into view: it looks exactly
+  // like the text vanished, even without the user touching the scrollbar.
+  // Runs before paint (useLayoutEffect) so this never has a chance to flash
+  // a blank frame first.
+  useLayoutEffect(() => {
+    if (!containerRef.current) return;
+    const maxScroll = Math.max(0, totalHeight - containerHeight);
+    if (containerRef.current.scrollTop > maxScroll || scrollTop > maxScroll) {
+      containerRef.current.scrollTop = maxScroll;
+      setScrollTop(maxScroll);
+    }
+  }, [lines, totalHeight, containerHeight]);
 
   // Jump to Top (Line 1)
   const jumpTop = () => {
