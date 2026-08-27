@@ -166,6 +166,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
           </div>
 
+          {/* Restart App — a full, immediate reload of the app, exactly like
+              closing and reopening it after a phone restart. It goes straight
+              back to the normal app screen with no extra prompt or in-between
+              screen, and doesn't touch or bypass the Reopen Last Document
+              setting above — that setting's own normal startup check runs
+              again unchanged, same as any other fresh launch. */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-slate-800/40 border border-slate-700/60">
+            <div>
+              <div className="font-semibold text-slate-200">{t(lang, "restartAppBtn")}</div>
+              <div className="text-[11px] text-slate-400">
+                Reloads the app fresh, the same as if you restarted your phone and opened it again
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 transition-colors shrink-0"
+              title={t(lang, "restartAppBtn")}
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+
           {/* Submit */}
           <div className="flex justify-end pt-2">
             <button
