@@ -3,6 +3,7 @@ import { Settings, User, RotateCcw, Sliders, Moon, Sun, X, Globe, HardDrive, Che
 import { EditorSession } from "../types";
 import { t, SUPPORTED_LANGUAGES } from "../lib/i18n";
 import { isNativePlatform, checkDiskAccessStatus, requestFullDiskAccess } from "../lib/nativeFileSystem";
+import { APP_VERSION } from "../lib/version";
 
 interface SettingsModalProps {
   session: EditorSession;
@@ -77,6 +78,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="flex items-center space-x-2">
             <Settings className="w-5 h-5 text-amber-400" />
             <h2 className="font-bold text-base sm:text-lg">binarycore {t(lang, "settingsHeading")}</h2>
+            {/* Precise iteration count of the whole source history — the
+                original Google AI Studio app plus every update made here
+                since — computed fresh by CI on every build (see
+                src/lib/version.ts), never hand-maintained. */}
+            <span
+              className="text-[10px] font-mono text-slate-500 select-none"
+              title={`${t(lang, "versionLabel")} ${APP_VERSION}`}
+            >
+              {t(lang, "versionLabel")} {APP_VERSION}
+            </span>
           </div>
           <button
             onClick={onClose}

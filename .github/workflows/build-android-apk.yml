@@ -30,6 +30,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history (not the default shallow clone), needed so the
+          # version number below (git rev-list --count) reflects the real,
+          # total iteration count of the app's source history rather than
+          # just "1" from a shallow checkout.
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -54,7 +60,13 @@ jobs:
           # that need a reachable server until they're configured.
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-        run: npx vite build
+        run: |
+          # Total commit count = the precise iteration number shown in
+          # Settings (src/lib/version.ts) — the original Google AI Studio
+          # source plus every update since, computed fresh every build so it
+          # never needs to be bumped by hand.
+          export VITE_APP_VERSION="$(git rev-list --count HEAD)"
+          npx vite build
 
       - name: Sync Capacitor Android project
         env:
