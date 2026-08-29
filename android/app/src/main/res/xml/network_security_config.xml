@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every request this app makes (OpenAI, Anthropic, Google Sign-In) already
+  goes out over HTTPS — this makes that a hard requirement instead of an
+  assumption (cleartextTrafficPermitted="false"), and trusts only the
+  device's built-in system CA store, never a user- or admin-installed
+  certificate. That closes off the classic on-device MITM attack, where a
+  rogue app, a malicious device profile, or a hostile network convinces the
+  OS to trust an attacker's certificate — without this, that alone would be
+  enough to intercept this app's traffic (including any AI provider API
+  key) despite it using HTTPS. No effect on any legitimate connection —
+  Anthropic, OpenAI, and Google all present certificates already covered by
+  the system trust store.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
