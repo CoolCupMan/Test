@@ -129,6 +129,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   const collapseWritingBox = useCallback(() => {
     setIsWritingBoxExpanded(false);
     setEditingRemarkStartIdx(null);
+    setEditingOriginalLineCount(0);
   }, []);
 
   // Handle Android Menu Back Key (popstate) & Keyboard Esc Key to close text writing box
@@ -226,14 +227,21 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   const [copied, setCopied] = useState(false);
   const [isSubmenuOpen, setIsSubmenuOpen] = useState(false);
 
-  // When set, the compose box is adding a REMARK to this existing (still
-  // within its 15-minute edit window) message instead of composing a brand
-  // new one — Send inserts an indented, arrow-marked remark line at the
-  // cursor in place of the usual fresh-timestamp entry, and no new message
-  // is created. Cleared once the remark is sent, once the writing box is
-  // collapsed, or as soon as the cursor is moved to a line outside that
-  // message (see handleSelectCursorLocation / getMessageLineRange below).
+  // When set, the compose box holds the full editable text of this existing
+  // (still within its 15-minute edit window) message, loaded there by its
+  // Edit button so every character, space, and line of it can be edited
+  // directly — Send below saves those edits back onto the message itself in
+  // place, and no new message is created. Any lines typed beyond the
+  // message's original length are treated as a new remark appended after it
+  // (indented and tagged "rem", see handleSaveMessageEdit). Cleared once the
+  // edit is sent, once the writing box is collapsed, or as soon as the
+  // cursor is moved to a line outside that message (see
+  // handleSelectCursorLocation / getMessageLineRange below).
   const [editingRemarkStartIdx, setEditingRemarkStartIdx] = useState<number | null>(null);
+  // How many lines the message had (timestamped first line + continuation
+  // lines) at the moment Edit was clicked — the boundary handleSaveMessageEdit
+  // uses to tell "edited original content" apart from "new remark lines".
+  const [editingOriginalLineCount, setEditingOriginalLineCount] = useState(0);
 
   // Undo / Redo History Stacks
   const [undoStack, setUndoStack] = useState<string[][]>([]);
@@ -859,6 +867,18 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     return res;
   }, [lines]);
 
+  // Detect a remark line added via message-edit (see handleSaveMessageEdit):
+  // stored in the document as "    ↳ [rem] text" for the first line of a
+  // remark and "      [rem] text" for any further lines of it. Returns the
+  // remark's own text with that marker stripped, so it can be shown as a
+  // small "rem" badge instead of literal bracket text — or null if this
+  // line isn't a remark line at all.
+  const REMARK_LINE_RE = /^\s*(?:↳\s*)?\[rem\]\s?(.*)$/;
+  const parseRemarkLine = (text: string): string | null => {
+    const m = REMARK_LINE_RE.exec(text);
+    return m ? m[1] : null;
+  };
+
   // Formatted inline Markdown & Text renderer for ChatGPT & User responses
   const renderFormattedContent = (
     text: string,
@@ -1054,19 +1074,30 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   // Jump into editing a freshly-sent message (only offered within the
   // 15-minute edit window) — reuses the existing click-to-place-cursor +
   // inline edit pipeline, just triggered from an explicit button instead of
-  // requiring the user to know they can tap the line directly. Also enters
-  // remark mode for that message: Send below now adds an indented remark to
-  // THIS message in place, instead of sending a whole new timestamped one.
+  // requiring the user to know they can tap the line directly. Loads the
+  // message's own current text (every line of it, timestamp aside) straight
+  // into the compose box below, so it's fully visible and every character,
+  // space, and line of it can be edited directly — Send then saves those
+  // edits back onto the message in place; see handleSaveMessageEdit.
   const handleEditRecentMessage = (e: React.MouseEvent, lineIdx: number) => {
     e.stopPropagation();
-    const raw = (lines[lineIdx] || "").replace(/\r$/, "");
-    // Remark-editing always shows the raw-line blinking cursor display
-    // (see the isActive/isWritingBoxExpanded render below) regardless of
-    // whatever the Free Writing toggle happens to be, so the starting
-    // column must be relative to the RAW line (what that display slices),
-    // not the text after the timestamp prefix.
-    handleSelectCursorLocation(lineIdx, raw.length);
-    setEditingRemarkStartIdx(lineIdx);
+    const { start, end } = getMessageLineRange(lineIdx);
+    const rawFirst = (lines[start] || "").replace(/\r$/, "");
+    const { editableText } = extractTimestampPrefix(rawFirst);
+    const restLines: string[] = [];
+    for (let i = start + 1; i <= end; i++) {
+      restLines.push((lines[i] || "").replace(/\r$/, ""));
+    }
+
+    // Resolve cursor placement FIRST — this may cancel a different
+    // message's in-progress edit session (see handleSelectCursorLocation
+    // below) — before loading THIS message's text in, so that cancellation
+    // can't turn around and wipe out the edit session being started here.
+    handleSelectCursorLocation(start, rawFirst.length);
+
+    setChatInput([editableText, ...restLines].join("\n"));
+    setEditingOriginalLineCount(end - start + 1);
+    setEditingRemarkStartIdx(start);
     if (!isWritingBoxExpanded) expandWritingBox();
   };
 
@@ -1074,16 +1105,20 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   const handleSelectCursorLocation = (lineIdx: number, colIdx: number = 0) => {
     setActiveLineIdx(lineIdx);
     setActiveColIdx(colIdx);
-    // A remark can be placed anywhere WITHIN the message it's being added
-    // to, so repositioning the cursor to another line of that same message
-    // keeps remark mode active. Moving to a line outside it means the user
-    // has moved on to something else, so cancel remark mode rather than
-    // silently attaching an unrelated remark to the wrong message.
-    setEditingRemarkStartIdx((prevStart) => {
-      if (prevStart === null) return null;
-      const { start, end } = getMessageLineRange(prevStart);
-      return lineIdx >= start && lineIdx <= end ? prevStart : null;
-    });
+    // The cursor can move to any line WITHIN the message currently being
+    // edited (its blinking-cursor preview just repositions), but moving to
+    // a line outside it means the user has moved on to something else —
+    // cancel the edit session and drop its loaded draft rather than risk
+    // that leftover text silently getting sent later as a brand new,
+    // duplicate message.
+    if (editingRemarkStartIdx !== null) {
+      const { start, end } = getMessageLineRange(editingRemarkStartIdx);
+      if (lineIdx < start || lineIdx > end) {
+        setEditingRemarkStartIdx(null);
+        setEditingOriginalLineCount(0);
+        setChatInput("");
+      }
+    }
     const raw = (lines[lineIdx] || "").replace(/\r$/, "");
     if (isFreeWritingMode) {
       setEditingText(raw);
@@ -1210,21 +1245,18 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     const contentLines = rawInputLines.slice(start, end);
     if (contentLines.length === 0 || contentLines.every((l) => l.trim() === "")) return;
 
-    let updatedLines = [...lines];
-    const isRemarkEdit = editingRemarkStartIdx !== null;
-    let entries: string[];
-    if (isRemarkEdit) {
-      // Editing an existing message (via its Edit button, within the
-      // 15-minute window) adds a REMARK to it in place instead of sending a
-      // whole new timestamped message — no fresh timestamp/name prefix is
-      // generated here at all. Each inserted line is indented and the first
-      // one is marked with a small arrow so, visually, it reads clearly as
-      // a remark attached to that message rather than a separate one.
-      entries = contentLines.map((l, i) => (i === 0 ? `    ↳ ${l}` : `      ${l}`));
-    } else {
-      const ts = generateTimestampStr();
-      entries = [`${ts}${contentLines[0]}`, ...contentLines.slice(1)];
+    // Editing an existing message (via its Edit button, within the
+    // 15-minute window) saves those edits back onto the message in place —
+    // an entirely different path from composing a brand new message below —
+    // and never creates a new timestamped message.
+    if (editingRemarkStartIdx !== null) {
+      handleSaveMessageEdit(contentLines);
+      return;
     }
+
+    let updatedLines = [...lines];
+    const ts = generateTimestampStr();
+    const entries = [`${ts}${contentLines[0]}`, ...contentLines.slice(1)];
     const lastEntryText = entries[entries.length - 1];
     let focusLineIdx: number | null = null;
 
@@ -1306,7 +1338,6 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
 
     applyChange(updatedLines);
     setChatInput("");
-    setEditingRemarkStartIdx(null);
 
     if (focusLineIdx !== null) {
       const target = focusLineIdx;
@@ -1316,6 +1347,47 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
         scrollToLineIdx(target, isBottomLine || cursorVerticalView, updatedLines.length, isTopLine);
       }, 50);
     }
+  };
+
+  // Save an in-progress message edit (see handleEditRecentMessage above)
+  // back onto the message itself, in place — never as a new message. The
+  // first editingOriginalLineCount lines of the compose box are treated as
+  // the (possibly edited) original message content and directly replace its
+  // old lines, keeping its original protected timestamp untouched; any
+  // further lines typed beyond that are new content the user added during
+  // this edit, so they're kept as a separate, clearly-marked remark
+  // (indented and tagged "rem") appended right after the edited message,
+  // rather than being silently folded into it as if they'd always been
+  // there.
+  const handleSaveMessageEdit = (contentLines: string[]) => {
+    const msgStartIdx = editingRemarkStartIdx;
+    if (msgStartIdx === null) return;
+    const { start: rangeStart, end: rangeEnd } = getMessageLineRange(msgStartIdx);
+    const originalFirstRaw = (lines[rangeStart] || "").replace(/\r$/, "");
+    const { timestampPrefix } = extractTimestampPrefix(originalFirstRaw);
+
+    const editedOriginal = contentLines.slice(0, editingOriginalLineCount);
+    const newRemarkLines = contentLines.slice(editingOriginalLineCount);
+
+    const rebuiltOriginal =
+      editedOriginal.length > 0
+        ? [`${timestampPrefix}${editedOriginal[0]}`, ...editedOriginal.slice(1)]
+        : [timestampPrefix];
+    const remarkLines = newRemarkLines.map((l, i) => (i === 0 ? `    ↳ [rem] ${l}` : `      [rem] ${l}`));
+    const replacement = [...rebuiltOriginal, ...remarkLines];
+
+    const updatedLines = [...lines.slice(0, rangeStart), ...replacement, ...lines.slice(rangeEnd + 1)];
+    applyChange(updatedLines);
+    setChatInput("");
+    setEditingRemarkStartIdx(null);
+    setEditingOriginalLineCount(0);
+
+    const target = rangeStart + replacement.length - 1;
+    setActiveLineIdx(target);
+    setActiveColIdx(0);
+    setTimeout(() => {
+      scrollToLineIdx(target, false, updatedLines.length);
+    }, 50);
   };
 
   // Insert Inline Timestamp Button
@@ -1784,6 +1856,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
 
                 if (viewMode === "vertical-messages") {
                   const parsed = getParsedMessage(actualIdx, cleanContent);
+                  const remarkText = parseRemarkLine(parsed.text);
                   return (
                     <div
                       key={actualIdx}
@@ -1798,6 +1871,12 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                       }}
                       className={`flex items-start px-2 sm:px-3 py-1.5 text-xs transition-colors cursor-pointer box-border relative ${
                         wordWrap ? "w-full overflow-hidden" : "min-w-full w-max"
+                      } ${
+                        // A remark added during message-editing gets extra
+                        // left indent plus its own accent border, on top of
+                        // its "rem" badge — visually clearly outstanding
+                        // from an ordinary user message, not just indented.
+                        remarkText !== null ? "pl-8 sm:pl-10 border-l-2 border-fuchsia-500/60" : ""
                       } ${
                         isFocused
                           ? darkTheme
@@ -1953,6 +2032,18 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                 <span>{parsed.sender}:</span>
                               </span>
                             )}
+                            {remarkText !== null && (
+                              <span
+                                className={`inline-flex items-center px-1.5 py-0.2 rounded font-mono font-bold text-[9px] mr-1.5 select-none shrink-0 border uppercase tracking-wide ${
+                                  darkTheme
+                                    ? "bg-fuchsia-950/80 text-fuchsia-300 border-fuchsia-700/70"
+                                    : "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300"
+                                }`}
+                                title="A remark added while editing a message — not the original message text"
+                              >
+                                rem
+                              </span>
+                            )}
                             <span
                               className={`${wordWrap ? "inline break-words break-all" : "inline whitespace-pre"} ${
                                 isFocused
@@ -1962,7 +2053,9 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                   : "text-slate-900 font-medium"
                               }`}
                             >
-                              {renderFormattedContent(parsed.text, parsed.role, darkTheme, isFocused)}
+                              {remarkText !== null
+                                ? renderFormattedContent(remarkText, parsed.role, darkTheme, isFocused)
+                                : renderFormattedContent(parsed.text, parsed.role, darkTheme, isFocused)}
                             </span>
                           </div>
 
@@ -2234,6 +2327,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
 
                   if (viewMode === "vertical-messages") {
                     const parsed = getParsedMessage(actualIdx, cleanContent);
+                    const remarkText = parseRemarkLine(parsed.text);
                     return (
                       <div
                         key={actualIdx}
@@ -2251,6 +2345,12 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                         }}
                         className={`flex items-start px-2 sm:px-3 py-1 text-xs transition-colors cursor-pointer box-border relative ${
                           wordWrap ? "w-full overflow-hidden" : "min-w-full w-max"
+                        } ${
+                          // A remark added during message-editing gets extra
+                          // left indent plus its own accent border, on top of
+                          // its "rem" badge — visually clearly outstanding
+                          // from an ordinary user message, not just indented.
+                          remarkText !== null ? "pl-8 sm:pl-10 border-l-2 border-fuchsia-500/60" : ""
                         } ${
                           isFocused
                             ? darkTheme
@@ -2402,6 +2502,18 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                   <span>{parsed.sender}:</span>
                                 </span>
                               )}
+                              {remarkText !== null && (
+                                <span
+                                  className={`inline-flex items-center px-1.5 py-0.2 rounded font-mono font-bold text-[9px] mr-1.5 select-none shrink-0 border uppercase tracking-wide ${
+                                    darkTheme
+                                      ? "bg-fuchsia-950/80 text-fuchsia-300 border-fuchsia-700/70"
+                                      : "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300"
+                                  }`}
+                                  title="A remark added while editing a message — not the original message text"
+                                >
+                                  rem
+                                </span>
+                              )}
                               <span
                                 className={`${wordWrap ? "inline break-words break-all" : "inline whitespace-pre"} ${
                                   isFocused
@@ -2411,7 +2523,9 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                     : "text-slate-900 font-medium"
                                 }`}
                               >
-                                {renderFormattedContent(parsed.text, parsed.role, darkTheme, isFocused)}
+                                {remarkText !== null
+                                  ? renderFormattedContent(remarkText, parsed.role, darkTheme, isFocused)
+                                  : renderFormattedContent(parsed.text, parsed.role, darkTheme, isFocused)}
                               </span>
                             </div>
 
