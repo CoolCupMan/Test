@@ -129,7 +129,6 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   const collapseWritingBox = useCallback(() => {
     setIsWritingBoxExpanded(false);
     setEditingRemarkStartIdx(null);
-    setEditingOriginalLineCount(0);
   }, []);
 
   // Handle Android Menu Back Key (popstate) & Keyboard Esc Key to close text writing box
@@ -231,17 +230,12 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   // (still within its 15-minute edit window) message, loaded there by its
   // Edit button so every character, space, and line of it can be edited
   // directly — Send below saves those edits back onto the message itself in
-  // place, and no new message is created. Any lines typed beyond the
-  // message's original length are treated as a new remark appended after it
-  // (indented and tagged "rem", see handleSaveMessageEdit). Cleared once the
-  // edit is sent, once the writing box is collapsed, or as soon as the
-  // cursor is moved to a line outside that message (see
-  // handleSelectCursorLocation / getMessageLineRange below).
+  // place (see handleSaveMessageEdit), replacing its old lines outright, and
+  // no new message is ever created. Cleared once the edit is sent, once the
+  // writing box is collapsed, or as soon as the cursor is moved to a line
+  // outside that message (see handleSelectCursorLocation / getMessageLineRange
+  // below).
   const [editingRemarkStartIdx, setEditingRemarkStartIdx] = useState<number | null>(null);
-  // How many lines the message had (timestamped first line + continuation
-  // lines) at the moment Edit was clicked — the boundary handleSaveMessageEdit
-  // uses to tell "edited original content" apart from "new remark lines".
-  const [editingOriginalLineCount, setEditingOriginalLineCount] = useState(0);
 
   // Undo / Redo History Stacks
   const [undoStack, setUndoStack] = useState<string[][]>([]);
@@ -1096,7 +1090,6 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     handleSelectCursorLocation(start, rawFirst.length);
 
     setChatInput([editableText, ...restLines].join("\n"));
-    setEditingOriginalLineCount(end - start + 1);
     setEditingRemarkStartIdx(start);
     if (!isWritingBoxExpanded) expandWritingBox();
   };
@@ -1115,7 +1108,6 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
       const { start, end } = getMessageLineRange(editingRemarkStartIdx);
       if (lineIdx < start || lineIdx > end) {
         setEditingRemarkStartIdx(null);
-        setEditingOriginalLineCount(0);
         setChatInput("");
       }
     }
@@ -1350,15 +1342,11 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   };
 
   // Save an in-progress message edit (see handleEditRecentMessage above)
-  // back onto the message itself, in place — never as a new message. The
-  // first editingOriginalLineCount lines of the compose box are treated as
-  // the (possibly edited) original message content and directly replace its
-  // old lines, keeping its original protected timestamp untouched; any
-  // further lines typed beyond that are new content the user added during
-  // this edit, so they're kept as a separate, clearly-marked remark
-  // (indented and tagged "rem") appended right after the edited message,
-  // rather than being silently folded into it as if they'd always been
-  // there.
+  // back onto the message itself, in place — never as a new message and
+  // never as a separate remark either. Whatever is now in the compose box
+  // becomes the message's new content outright, replacing all of its old
+  // lines; only its original protected timestamp is kept untouched and
+  // reattached to the new first line.
   const handleSaveMessageEdit = (contentLines: string[]) => {
     const msgStartIdx = editingRemarkStartIdx;
     if (msgStartIdx === null) return;
@@ -1366,21 +1354,12 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     const originalFirstRaw = (lines[rangeStart] || "").replace(/\r$/, "");
     const { timestampPrefix } = extractTimestampPrefix(originalFirstRaw);
 
-    const editedOriginal = contentLines.slice(0, editingOriginalLineCount);
-    const newRemarkLines = contentLines.slice(editingOriginalLineCount);
-
-    const rebuiltOriginal =
-      editedOriginal.length > 0
-        ? [`${timestampPrefix}${editedOriginal[0]}`, ...editedOriginal.slice(1)]
-        : [timestampPrefix];
-    const remarkLines = newRemarkLines.map((l, i) => (i === 0 ? `    ↳ [rem] ${l}` : `      [rem] ${l}`));
-    const replacement = [...rebuiltOriginal, ...remarkLines];
+    const replacement = [`${timestampPrefix}${contentLines[0]}`, ...contentLines.slice(1)];
 
     const updatedLines = [...lines.slice(0, rangeStart), ...replacement, ...lines.slice(rangeEnd + 1)];
     applyChange(updatedLines);
     setChatInput("");
     setEditingRemarkStartIdx(null);
-    setEditingOriginalLineCount(0);
 
     const target = rangeStart + replacement.length - 1;
     setActiveLineIdx(target);
