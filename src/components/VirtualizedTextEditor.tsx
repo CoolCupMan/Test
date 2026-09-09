@@ -90,6 +90,13 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
 
+  // Set right before a programmatic .focus() on the compose textarea (e.g.
+  // opening the writing box) so its onFocus handler knows to jump to the
+  // box's bottom just this once. A normal focus from the user tapping/
+  // clicking into the box to reposition their cursor leaves this false, so
+  // that click isn't immediately overridden by a forced scroll to the end.
+  const forceFollowBottomRef = useRef(true);
+
   const getBottomBarHeight = (): number => {
     if (bottomBarRef.current && bottomBarRef.current.offsetHeight > 0) {
       return bottomBarRef.current.offsetHeight;
@@ -113,6 +120,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     });
     setTimeout(() => {
       if (chatInputRef.current) {
+        forceFollowBottomRef.current = true;
         chatInputRef.current.focus({ preventScroll: true });
       }
     }, 50);
@@ -120,6 +128,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
 
   const collapseWritingBox = useCallback(() => {
     setIsWritingBoxExpanded(false);
+    setEditingRemarkStartIdx(null);
   }, []);
 
   // Handle Android Menu Back Key (popstate) & Keyboard Esc Key to close text writing box
@@ -216,6 +225,15 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   const [chatInput, setChatInput] = useState("");
   const [copied, setCopied] = useState(false);
   const [isSubmenuOpen, setIsSubmenuOpen] = useState(false);
+
+  // When set, the compose box is adding a REMARK to this existing (still
+  // within its 15-minute edit window) message instead of composing a brand
+  // new one — Send inserts an indented, arrow-marked remark line at the
+  // cursor in place of the usual fresh-timestamp entry, and no new message
+  // is created. Cleared once the remark is sent, once the writing box is
+  // collapsed, or as soon as the cursor is moved to a line outside that
+  // message (see handleSelectCursorLocation / getMessageLineRange below).
+  const [editingRemarkStartIdx, setEditingRemarkStartIdx] = useState<number | null>(null);
 
   // Undo / Redo History Stacks
   const [undoStack, setUndoStack] = useState<string[][]>([]);
@@ -314,10 +332,21 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     }
   }, [lines.length]);
 
-  // Auto-scroll typing window textarea to bottom so the last line of typed text is always displayed
+  // Auto-scroll typing window textarea to bottom so the last line of typed
+  // text is always displayed — but ONLY while the caret is already at (or
+  // right at) the very end, i.e. the user is continuing to type/paste onto
+  // the end like a normal chat message. Forcing this unconditionally used
+  // to yank the box's own internal scroll (and the visible caret with it)
+  // down to its last line even while typing or pasting into an EARLIER
+  // line the user had scrolled up to fix — making it look like the cursor
+  // had jumped away from where it actually was.
+  const isCaretNearEnd = (el: HTMLTextAreaElement, text: string): boolean =>
+    el.selectionStart === null || el.selectionStart >= text.length - 1;
+
   useEffect(() => {
-    if (chatInputRef.current) {
-      chatInputRef.current.scrollTop = chatInputRef.current.scrollHeight;
+    const el = chatInputRef.current;
+    if (el && isCaretNearEnd(el, chatInput)) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [chatInput]);
 
@@ -942,26 +971,48 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     });
   };
 
+  // Find the full range of document lines that belong to one message
+  // starting at startIdx: its timestamped first line plus every
+  // continuation line, up to (but not including) the next message's own
+  // timestamped line, or end of document. Deliberately does NOT stop at an
+  // interior blank line — a pasted block of code very often has blank
+  // lines in the middle of it, and those are real content of THIS message,
+  // not a separator from the next one. Shared by Copy Full (below) and by
+  // the remark-editing cursor range check, so both agree on where a
+  // message actually ends.
+  const getMessageLineRange = (startIdx: number): { start: number; end: number } => {
+    let end = startIdx;
+    for (let i = startIdx + 1; i < lines.length; i++) {
+      const raw = (lines[i] || "").replace(/\r$/, "");
+      if (extractTimestampPrefix(raw).timestampPrefix) break;
+      end = i;
+    }
+    return { start: startIdx, end };
+  };
+
   // Copy an entire text message — its timestamp+name line PLUS every
   // continuation line that belongs to it (e.g. a pasted multi-line/code
   // message) — in one click, instead of having to copy each line
-  // separately. Only offered on a message's first (timestamped) line; it
-  // walks forward collecting plain continuation lines and stops at the
-  // first blank line, the next message's own timestamp, or end of document.
+  // separately. Only offered on a message's first (timestamped) line.
   // The existing single-line Copy button is untouched and still copies
   // just that one line.
   const [copiedFullMessageIdx, setCopiedFullMessageIdx] = useState<number | null>(null);
 
   const handleCopyFullMessage = (e: React.MouseEvent, startIdx: number) => {
     e.stopPropagation();
+    const { end } = getMessageLineRange(startIdx);
     const collected: string[] = [];
-    for (let i = startIdx; i < lines.length; i++) {
-      const raw = (lines[i] || "").replace(/\r$/, "");
-      if (i > startIdx) {
-        if (raw.trim() === "") break;
-        if (extractTimestampPrefix(raw).timestampPrefix) break;
-      }
-      collected.push(raw);
+    for (let i = startIdx; i <= end; i++) {
+      collected.push((lines[i] || "").replace(/\r$/, ""));
+    }
+    // Trim only TRAILING blank lines — those just separate this message
+    // from whatever comes after it (e.g. a "+ Remark Line" spacer), not
+    // actual content of this message. Interior blank lines (blank lines in
+    // the middle of pasted code, paragraph breaks, etc.) are kept, since
+    // dropping them at the first one used to cut a code message off after
+    // only its first few lines.
+    while (collected.length > 1 && collected[collected.length - 1].trim() === "") {
+      collected.pop();
     }
     const combined = collected.join("\n");
     if (!combined) return;
@@ -1003,12 +1054,19 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   // Jump into editing a freshly-sent message (only offered within the
   // 15-minute edit window) — reuses the existing click-to-place-cursor +
   // inline edit pipeline, just triggered from an explicit button instead of
-  // requiring the user to know they can tap the line directly.
+  // requiring the user to know they can tap the line directly. Also enters
+  // remark mode for that message: Send below now adds an indented remark to
+  // THIS message in place, instead of sending a whole new timestamped one.
   const handleEditRecentMessage = (e: React.MouseEvent, lineIdx: number) => {
     e.stopPropagation();
     const raw = (lines[lineIdx] || "").replace(/\r$/, "");
-    const { editableText: text } = extractTimestampPrefix(raw);
-    handleSelectCursorLocation(lineIdx, isFreeWritingMode ? raw.length : text.length);
+    // Remark-editing always shows the raw-line blinking cursor display
+    // (see the isActive/isWritingBoxExpanded render below) regardless of
+    // whatever the Free Writing toggle happens to be, so the starting
+    // column must be relative to the RAW line (what that display slices),
+    // not the text after the timestamp prefix.
+    handleSelectCursorLocation(lineIdx, raw.length);
+    setEditingRemarkStartIdx(lineIdx);
     if (!isWritingBoxExpanded) expandWritingBox();
   };
 
@@ -1016,6 +1074,16 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   const handleSelectCursorLocation = (lineIdx: number, colIdx: number = 0) => {
     setActiveLineIdx(lineIdx);
     setActiveColIdx(colIdx);
+    // A remark can be placed anywhere WITHIN the message it's being added
+    // to, so repositioning the cursor to another line of that same message
+    // keeps remark mode active. Moving to a line outside it means the user
+    // has moved on to something else, so cancel remark mode rather than
+    // silently attaching an unrelated remark to the wrong message.
+    setEditingRemarkStartIdx((prevStart) => {
+      if (prevStart === null) return null;
+      const { start, end } = getMessageLineRange(prevStart);
+      return lineIdx >= start && lineIdx <= end ? prevStart : null;
+    });
     const raw = (lines[lineIdx] || "").replace(/\r$/, "");
     if (isFreeWritingMode) {
       setEditingText(raw);
@@ -1044,6 +1112,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     setEditingText("");
     expandWritingBox();
     if (chatInputRef.current) {
+      forceFollowBottomRef.current = true;
       chatInputRef.current.focus();
     }
 
@@ -1074,6 +1143,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
         setScrollTop(0);
       }
       if (chatInputRef.current) {
+        forceFollowBottomRef.current = true;
         chatInputRef.current.focus();
       }
     }, 50);
@@ -1101,6 +1171,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     setTimeout(() => {
       scrollToLineIdx(newBottomIdx, true, updatedLines.length);
       if (chatInputRef.current) {
+        forceFollowBottomRef.current = true;
         chatInputRef.current.focus();
       }
     }, 50);
@@ -1140,8 +1211,20 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     if (contentLines.length === 0 || contentLines.every((l) => l.trim() === "")) return;
 
     let updatedLines = [...lines];
-    const ts = generateTimestampStr();
-    const entries = [`${ts}${contentLines[0]}`, ...contentLines.slice(1)];
+    const isRemarkEdit = editingRemarkStartIdx !== null;
+    let entries: string[];
+    if (isRemarkEdit) {
+      // Editing an existing message (via its Edit button, within the
+      // 15-minute window) adds a REMARK to it in place instead of sending a
+      // whole new timestamped message — no fresh timestamp/name prefix is
+      // generated here at all. Each inserted line is indented and the first
+      // one is marked with a small arrow so, visually, it reads clearly as
+      // a remark attached to that message rather than a separate one.
+      entries = contentLines.map((l, i) => (i === 0 ? `    ↳ ${l}` : `      ${l}`));
+    } else {
+      const ts = generateTimestampStr();
+      entries = [`${ts}${contentLines[0]}`, ...contentLines.slice(1)];
+    }
     const lastEntryText = entries[entries.length - 1];
     let focusLineIdx: number | null = null;
 
@@ -1223,6 +1306,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
 
     applyChange(updatedLines);
     setChatInput("");
+    setEditingRemarkStartIdx(null);
 
     if (focusLineIdx !== null) {
       const target = focusLineIdx;
@@ -1746,13 +1830,31 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                       {/* Inline Text Input or Placeable Cursor Display */}
                       {isActive && isWritingBoxExpanded ? (
                         <div className="flex-1 flex flex-col gap-1">
-                          {isFreeWritingMode ? (
-                            <div className="flex items-center space-x-1 text-amber-200 font-mono text-xs bg-amber-950/80 px-2 py-1.5 rounded border border-amber-500/70 shadow-md whitespace-pre-wrap break-all">
-                              <span className="font-semibold text-amber-400 text-[10px] mr-1.5 select-none bg-amber-900/60 px-1.5 py-0.5 rounded border border-amber-700/60">
-                                Cursor Line #{lineNum}, Col #{(activeColIdx || 0) + 1}
+                          {isFreeWritingMode || editingRemarkStartIdx !== null ? (
+                            <div
+                              className={`flex items-center space-x-1 font-mono text-xs px-2 py-1.5 rounded border shadow-md whitespace-pre-wrap break-all ${
+                                editingRemarkStartIdx !== null
+                                  ? "text-teal-200 bg-teal-950/80 border-teal-500/70"
+                                  : "text-amber-200 bg-amber-950/80 border-amber-500/70"
+                              }`}
+                            >
+                              <span
+                                className={`font-semibold text-[10px] mr-1.5 select-none px-1.5 py-0.5 rounded border ${
+                                  editingRemarkStartIdx !== null
+                                    ? "text-teal-400 bg-teal-900/60 border-teal-700/60"
+                                    : "text-amber-400 bg-amber-900/60 border-amber-700/60"
+                                }`}
+                              >
+                                {editingRemarkStartIdx !== null ? "Remark " : ""}Cursor Line #{lineNum}, Col #{(activeColIdx || 0) + 1}
                               </span>
                               <span>{cleanContent.slice(0, activeColIdx || 0)}</span>
-                              <span className="inline-block w-[3px] h-[16px] bg-amber-400 animate-pulse mx-[1px] align-middle shadow-[0_0_10px_#f59e0b] border-r border-amber-300 shrink-0" />
+                              <span
+                                className={`inline-block w-[3px] h-[16px] animate-pulse mx-[1px] align-middle shrink-0 border-r ${
+                                  editingRemarkStartIdx !== null
+                                    ? "bg-teal-400 shadow-[0_0_10px_#2dd4bf] border-teal-300"
+                                    : "bg-amber-400 shadow-[0_0_10px_#f59e0b] border-amber-300"
+                                }`}
+                              />
                               <span>{cleanContent.slice(activeColIdx || 0)}</span>
                             </div>
                           ) : isEmptyLine ? (
@@ -1771,7 +1873,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                             </div>
                           ) : null}
 
-                          {!isFreeWritingMode && (
+                          {!isFreeWritingMode && editingRemarkStartIdx === null && (
                             <div className="flex items-center gap-1.5 w-full">
                               <span className="text-emerald-400 font-mono font-bold animate-pulse text-sm shrink-0">|</span>
                               <input
@@ -1885,22 +1987,6 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                 )}
                               </button>
 
-                              {parsed.timestamp && isMessageEditable(parsed.timestamp) && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleEditRecentMessage(e, actualIdx)}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
-                                    darkTheme
-                                      ? "bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-700/80"
-                                      : "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300"
-                                  }`}
-                                  title="Edit this message (available for 15 minutes after sending)"
-                                >
-                                  <PenTool className="w-3 h-3 shrink-0" />
-                                  <span>Edit</span>
-                                </button>
-                              )}
-
                               <button
                                 type="button"
                                 onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
@@ -1961,6 +2047,27 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                     <span>Full</span>
                                   </>
                                 )}
+                              </button>
+                            )}
+
+                            {/* Edit sits directly below Copy Full — thin and
+                                compact rather than a third button crowding the
+                                Select/Copy row above — so the action cluster
+                                stays narrow and the message text keeps as much
+                                width as possible for vertical reading. */}
+                            {parsed.timestamp && isMessageEditable(parsed.timestamp) && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleEditRecentMessage(e, actualIdx)}
+                                className={`px-1.5 py-[1px] rounded text-[9px] font-mono font-semibold flex items-center justify-center space-x-1 leading-none transition-all select-none border ${
+                                  darkTheme
+                                    ? "bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-700/80"
+                                    : "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300"
+                                }`}
+                                title="Edit this message (available for 15 minutes after sending)"
+                              >
+                                <PenTool className="w-2.5 h-2.5 shrink-0" />
+                                <span>Edit</span>
                               </button>
                             )}
                           </div>
@@ -2172,13 +2279,31 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                         {/* Inline Text Input or Placeable Cursor Display */}
                         {isActive && isWritingBoxExpanded ? (
                           <div className="flex-1 flex flex-col gap-1">
-                            {isFreeWritingMode ? (
-                              <div className="flex items-center space-x-1 text-amber-200 font-mono text-xs bg-amber-950/80 px-2 py-1.5 rounded border border-amber-500/70 shadow-md whitespace-pre-wrap break-all">
-                                <span className="font-semibold text-amber-400 text-[10px] mr-1.5 select-none bg-amber-900/60 px-1.5 py-0.5 rounded border border-amber-700/60">
-                                  Cursor Line #{lineNum}, Col #{(activeColIdx || 0) + 1}
+                            {isFreeWritingMode || editingRemarkStartIdx !== null ? (
+                              <div
+                                className={`flex items-center space-x-1 font-mono text-xs px-2 py-1.5 rounded border shadow-md whitespace-pre-wrap break-all ${
+                                  editingRemarkStartIdx !== null
+                                    ? "text-teal-200 bg-teal-950/80 border-teal-500/70"
+                                    : "text-amber-200 bg-amber-950/80 border-amber-500/70"
+                                }`}
+                              >
+                                <span
+                                  className={`font-semibold text-[10px] mr-1.5 select-none px-1.5 py-0.5 rounded border ${
+                                    editingRemarkStartIdx !== null
+                                      ? "text-teal-400 bg-teal-900/60 border-teal-700/60"
+                                      : "text-amber-400 bg-amber-900/60 border-amber-700/60"
+                                  }`}
+                                >
+                                  {editingRemarkStartIdx !== null ? "Remark " : ""}Cursor Line #{lineNum}, Col #{(activeColIdx || 0) + 1}
                                 </span>
                                 <span>{cleanContent.slice(0, activeColIdx || 0)}</span>
-                                <span className="inline-block w-[3px] h-[16px] bg-amber-400 animate-pulse mx-[1px] align-middle shadow-[0_0_10px_#f59e0b] border-r border-amber-300 shrink-0" />
+                                <span
+                                  className={`inline-block w-[3px] h-[16px] animate-pulse mx-[1px] align-middle shrink-0 border-r ${
+                                    editingRemarkStartIdx !== null
+                                      ? "bg-teal-400 shadow-[0_0_10px_#2dd4bf] border-teal-300"
+                                      : "bg-amber-400 shadow-[0_0_10px_#f59e0b] border-amber-300"
+                                  }`}
+                                />
                                 <span>{cleanContent.slice(activeColIdx || 0)}</span>
                               </div>
                             ) : isEmptyLine ? (
@@ -2197,7 +2322,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                               </div>
                             ) : null}
 
-                            {!isFreeWritingMode && (
+                            {!isFreeWritingMode && editingRemarkStartIdx === null && (
                               <div className="flex items-center gap-1.5 w-full">
                                 <span className="text-emerald-400 font-mono font-bold animate-pulse text-sm shrink-0">|</span>
                                 <input
@@ -2311,22 +2436,6 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                   )}
                                 </button>
 
-                                {parsed.timestamp && isMessageEditable(parsed.timestamp) && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleEditRecentMessage(e, actualIdx)}
-                                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold flex items-center space-x-1 transition-all select-none border ${
-                                      darkTheme
-                                        ? "bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-700/80"
-                                        : "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300"
-                                    }`}
-                                    title="Edit this message (available for 15 minutes after sending)"
-                                  >
-                                    <PenTool className="w-3 h-3 shrink-0" />
-                                    <span>Edit</span>
-                                  </button>
-                                )}
-
                                 <button
                                   type="button"
                                   onClick={(e) => handleCopySingleLine(e, cleanContent, actualIdx)}
@@ -2374,6 +2483,24 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                       <span>Full</span>
                                     </>
                                   )}
+                                </button>
+                              )}
+
+                              {/* Edit sits directly below Copy Full — thin and
+                                  compact rather than a third button crowding
+                                  the Select/Copy row above — so the action
+                                  cluster stays narrow and the message text
+                                  keeps as much width as possible for vertical
+                                  reading. */}
+                              {parsed.timestamp && isMessageEditable(parsed.timestamp) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleEditRecentMessage(e, actualIdx)}
+                                  className="px-1.5 py-[1px] rounded text-[9px] font-mono font-semibold flex items-center justify-center space-x-1 leading-none transition-all select-none border bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-700/80"
+                                  title="Edit this message (available for 15 minutes after sending)"
+                                >
+                                  <PenTool className="w-2.5 h-2.5 shrink-0" />
+                                  <span>Edit</span>
                                 </button>
                               )}
                             </div>
@@ -2734,15 +2861,24 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                 // Same upper limit for typing AND pasting — a paste that would push
                 // past it is simply clamped here too, since paste fires this same
                 // onChange with the already-merged value.
-                setChatInput(next.length > MAX_CHAT_INPUT_CHARS ? next.slice(0, MAX_CHAT_INPUT_CHARS) : next);
-                if (chatInputRef.current) {
+                const clamped = next.length > MAX_CHAT_INPUT_CHARS ? next.slice(0, MAX_CHAT_INPUT_CHARS) : next;
+                setChatInput(clamped);
+                // Only follow the box's own scroll down to its bottom when the
+                // caret is already at (or right at) the end — i.e. this change
+                // is normal continued typing/pasting onto the end. Doing this
+                // unconditionally used to snap the view to the bottom even
+                // while typing or pasting into an earlier line the user had
+                // scrolled up to edit, making it look like the cursor had
+                // jumped away from where it actually was.
+                if (chatInputRef.current && isCaretNearEnd(e.target, clamped)) {
                   chatInputRef.current.scrollTop = chatInputRef.current.scrollHeight;
                 }
               }}
               onFocus={() => {
-                if (chatInputRef.current) {
+                if (chatInputRef.current && forceFollowBottomRef.current) {
                   chatInputRef.current.scrollTop = chatInputRef.current.scrollHeight;
                 }
+                forceFollowBottomRef.current = false;
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
