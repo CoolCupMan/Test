@@ -861,11 +861,11 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     return res;
   }, [lines]);
 
-  // Detect a remark line added via message-edit (see handleSaveMessageEdit):
-  // stored in the document as "    ↳ [rem] text" for the first line of a
-  // remark and "      [rem] text" for any further lines of it. Returns the
-  // remark's own text with that marker stripped, so it can be shown as a
-  // small "rem" badge instead of literal bracket text — or null if this
+  // Detect a remark — a message sent with Free Writing toggled off (see
+  // handleSendChat's Standard Remark branch), stored with a small "[rem]"
+  // marker baked in right after its timestamp/name. Returns the remark's
+  // own text with that marker stripped, so it can be shown as a small
+  // orange "rem" badge instead of literal bracket text — or null if this
   // line isn't a remark line at all.
   const REMARK_LINE_RE = /^\s*(?:↳\s*)?\[rem\]\s?(.*)$/;
   const parseRemarkLine = (text: string): string | null => {
@@ -1248,7 +1248,13 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
 
     let updatedLines = [...lines];
     const ts = generateTimestampStr();
-    const entries = [`${ts}${contentLines[0]}`, ...contentLines.slice(1)];
+    // Standard Remark mode (Free Writing toggled off) tags what it sends as
+    // a remark — a small "[rem]" marker baked in right after the
+    // timestamp/name — so it renders with its own "rem" badge, one step of
+    // extra indent, and orange accent color (see parseRemarkLine below),
+    // instead of looking identical to a Free Writing message.
+    const firstLineContent = isFreeWritingMode ? contentLines[0] : `[rem] ${contentLines[0]}`;
+    const entries = [`${ts}${firstLineContent}`, ...contentLines.slice(1)];
     const lastEntryText = entries[entries.length - 1];
     let focusLineIdx: number | null = null;
 
@@ -1851,11 +1857,11 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                       className={`flex items-start px-2 sm:px-3 py-1.5 text-xs transition-colors cursor-pointer box-border relative ${
                         wordWrap ? "w-full overflow-hidden" : "min-w-full w-max"
                       } ${
-                        // A remark added during message-editing gets extra
-                        // left indent plus its own accent border, on top of
-                        // its "rem" badge — visually clearly outstanding
-                        // from an ordinary user message, not just indented.
-                        remarkText !== null ? "pl-8 sm:pl-10 border-l-2 border-fuchsia-500/60" : ""
+                        // A remark gets one step of extra left indent plus
+                        // its own orange accent border, on top of its "rem"
+                        // badge — visually clearly outstanding from an
+                        // ordinary user message, not just indented.
+                        remarkText !== null ? "pl-6 sm:pl-7 border-l-2 border-orange-500/60" : ""
                       } ${
                         isFocused
                           ? darkTheme
@@ -2015,10 +2021,10 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                               <span
                                 className={`inline-flex items-center px-1.5 py-0.2 rounded font-mono font-bold text-[9px] mr-1.5 select-none shrink-0 border uppercase tracking-wide ${
                                   darkTheme
-                                    ? "bg-fuchsia-950/80 text-fuchsia-300 border-fuchsia-700/70"
-                                    : "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300"
+                                    ? "bg-orange-950/80 text-orange-300 border-orange-700/70"
+                                    : "bg-orange-100 text-orange-900 border-orange-300"
                                 }`}
-                                title="A remark added while editing a message — not the original message text"
+                                title="A remark — sent with Free Writing off, not a Free Writing message"
                               >
                                 rem
                               </span>
@@ -2325,11 +2331,11 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                         className={`flex items-start px-2 sm:px-3 py-1 text-xs transition-colors cursor-pointer box-border relative ${
                           wordWrap ? "w-full overflow-hidden" : "min-w-full w-max"
                         } ${
-                          // A remark added during message-editing gets extra
-                          // left indent plus its own accent border, on top of
-                          // its "rem" badge — visually clearly outstanding
-                          // from an ordinary user message, not just indented.
-                          remarkText !== null ? "pl-8 sm:pl-10 border-l-2 border-fuchsia-500/60" : ""
+                          // A remark gets one step of extra left indent plus
+                          // its own orange accent border, on top of its "rem"
+                          // badge — visually clearly outstanding from an
+                          // ordinary user message, not just indented.
+                          remarkText !== null ? "pl-6 sm:pl-7 border-l-2 border-orange-500/60" : ""
                         } ${
                           isFocused
                             ? darkTheme
@@ -2485,10 +2491,10 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                 <span
                                   className={`inline-flex items-center px-1.5 py-0.2 rounded font-mono font-bold text-[9px] mr-1.5 select-none shrink-0 border uppercase tracking-wide ${
                                     darkTheme
-                                      ? "bg-fuchsia-950/80 text-fuchsia-300 border-fuchsia-700/70"
-                                      : "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300"
+                                      ? "bg-orange-950/80 text-orange-300 border-orange-700/70"
+                                      : "bg-orange-100 text-orange-900 border-orange-300"
                                   }`}
-                                  title="A remark added while editing a message — not the original message text"
+                                  title="A remark — sent with Free Writing off, not a Free Writing message"
                                 >
                                   rem
                                 </span>

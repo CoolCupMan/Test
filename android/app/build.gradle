@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "app.binarycore.editor3dx21"
+    namespace "app.binarycore.editor3dx22"
     compileSdkVersion rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "app.binarycore.editor3dx21"
+        applicationId "app.binarycore.editor3dx22"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
