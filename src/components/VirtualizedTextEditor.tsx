@@ -129,6 +129,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   const collapseWritingBox = useCallback(() => {
     setIsWritingBoxExpanded(false);
     setEditingRemarkStartIdx(null);
+    setPendingRemarkLineIdx(null);
   }, []);
 
   // Handle Android Menu Back Key (popstate) & Keyboard Esc Key to close text writing box
@@ -236,6 +237,15 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
   // outside that message (see handleSelectCursorLocation / getMessageLineRange
   // below).
   const [editingRemarkStartIdx, setEditingRemarkStartIdx] = useState<number | null>(null);
+
+  // Set by the "+ Remark Line" button (handleInsertEmptyRemarkLine): the
+  // empty line it just created is waiting to be filled in as a remark, so
+  // whatever gets typed and sent into it is tagged as one (orange "rem"
+  // badge/highlight — see parseRemarkLine) regardless of whether Free
+  // Writing happens to be on or off, instead of only Standard Remark sends
+  // being tagged. Cleared once that line is sent, the writing box is
+  // collapsed, or the cursor moves to a different line.
+  const [pendingRemarkLineIdx, setPendingRemarkLineIdx] = useState<number | null>(null);
 
   // Undo / Redo History Stacks
   const [undoStack, setUndoStack] = useState<string[][]>([]);
@@ -1111,6 +1121,12 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
         setChatInput("");
       }
     }
+    // Likewise, a "+ Remark Line" placeholder waiting to be filled in only
+    // stays pending while the cursor is still on that exact line — moving
+    // elsewhere means the user has moved on without writing it.
+    if (pendingRemarkLineIdx !== null && lineIdx !== pendingRemarkLineIdx) {
+      setPendingRemarkLineIdx(null);
+    }
     const raw = (lines[lineIdx] || "").replace(/\r$/, "");
     if (isFreeWritingMode) {
       setEditingText(raw);
@@ -1137,6 +1153,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
     setActiveLineIdx(targetIdx);
     setActiveColIdx(0);
     setEditingText("");
+    setPendingRemarkLineIdx(targetIdx);
     expandWritingBox();
     if (chatInputRef.current) {
       forceFollowBottomRef.current = true;
@@ -1248,12 +1265,16 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
 
     let updatedLines = [...lines];
     const ts = generateTimestampStr();
-    // Standard Remark mode (Free Writing toggled off) tags what it sends as
-    // a remark — a small "[rem]" marker baked in right after the
-    // timestamp/name — so it renders with its own "rem" badge, one step of
-    // extra indent, and orange accent color (see parseRemarkLine below),
-    // instead of looking identical to a Free Writing message.
-    const firstLineContent = isFreeWritingMode ? contentLines[0] : `[rem] ${contentLines[0]}`;
+    // Tag what's being sent as a remark — a small "[rem]" marker baked in
+    // right after the timestamp/name, so it renders with its own "rem"
+    // badge, one step of extra indent, and orange background (see
+    // parseRemarkLine below) instead of looking identical to a Free Writing
+    // message — whenever either Standard Remark mode (Free Writing toggled
+    // off) is sending it, or this is the placeholder line the "+ Remark
+    // Line" button just created (regardless of which mode is toggled).
+    const isPendingRemarkLine = pendingRemarkLineIdx !== null && pendingRemarkLineIdx === activeLineIdx;
+    const isRemarkSend = !isFreeWritingMode || isPendingRemarkLine;
+    const firstLineContent = isRemarkSend ? `[rem] ${contentLines[0]}` : contentLines[0];
     const entries = [`${ts}${firstLineContent}`, ...contentLines.slice(1)];
     const lastEntryText = entries[entries.length - 1];
     let focusLineIdx: number | null = null;
@@ -1336,6 +1357,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
 
     applyChange(updatedLines);
     setChatInput("");
+    setPendingRemarkLineIdx(null);
 
     if (focusLineIdx !== null) {
       const target = focusLineIdx;
@@ -1902,11 +1924,13 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                       {/* Inline Text Input or Placeable Cursor Display */}
                       {isActive && isWritingBoxExpanded ? (
                         <div className="flex-1 flex flex-col gap-1">
-                          {isFreeWritingMode || editingRemarkStartIdx !== null ? (
+                          {isFreeWritingMode || editingRemarkStartIdx !== null || pendingRemarkLineIdx === actualIdx ? (
                             <div
                               className={`flex items-center space-x-1 font-mono text-xs px-2 py-1.5 rounded border shadow-md whitespace-pre-wrap break-all ${
                                 editingRemarkStartIdx !== null
                                   ? "text-teal-200 bg-teal-950/80 border-teal-500/70"
+                                  : pendingRemarkLineIdx === actualIdx
+                                  ? "text-orange-200 bg-orange-950/80 border-orange-500/70"
                                   : "text-amber-200 bg-amber-950/80 border-amber-500/70"
                               }`}
                             >
@@ -1914,16 +1938,20 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                 className={`font-semibold text-[10px] mr-1.5 select-none px-1.5 py-0.5 rounded border ${
                                   editingRemarkStartIdx !== null
                                     ? "text-teal-400 bg-teal-900/60 border-teal-700/60"
+                                    : pendingRemarkLineIdx === actualIdx
+                                    ? "text-orange-400 bg-orange-900/60 border-orange-700/60"
                                     : "text-amber-400 bg-amber-900/60 border-amber-700/60"
                                 }`}
                               >
-                                {editingRemarkStartIdx !== null ? "Remark " : ""}Cursor Line #{lineNum}, Col #{(activeColIdx || 0) + 1}
+                                {editingRemarkStartIdx !== null || pendingRemarkLineIdx === actualIdx ? "Remark " : ""}Cursor Line #{lineNum}, Col #{(activeColIdx || 0) + 1}
                               </span>
                               <span>{cleanContent.slice(0, activeColIdx || 0)}</span>
                               <span
                                 className={`inline-block w-[3px] h-[16px] animate-pulse mx-[1px] align-middle shrink-0 border-r ${
                                   editingRemarkStartIdx !== null
                                     ? "bg-teal-400 shadow-[0_0_10px_#2dd4bf] border-teal-300"
+                                    : pendingRemarkLineIdx === actualIdx
+                                    ? "bg-orange-400 shadow-[0_0_10px_#f97316] border-orange-300"
                                     : "bg-amber-400 shadow-[0_0_10px_#f59e0b] border-amber-300"
                                 }`}
                               />
@@ -1945,7 +1973,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                             </div>
                           ) : null}
 
-                          {!isFreeWritingMode && editingRemarkStartIdx === null && (
+                          {!isFreeWritingMode && editingRemarkStartIdx === null && pendingRemarkLineIdx !== actualIdx && (
                             <div className="flex items-center gap-1.5 w-full">
                               <span className="text-emerald-400 font-mono font-bold animate-pulse text-sm shrink-0">|</span>
                               <input
@@ -2380,11 +2408,13 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                         {/* Inline Text Input or Placeable Cursor Display */}
                         {isActive && isWritingBoxExpanded ? (
                           <div className="flex-1 flex flex-col gap-1">
-                            {isFreeWritingMode || editingRemarkStartIdx !== null ? (
+                            {isFreeWritingMode || editingRemarkStartIdx !== null || pendingRemarkLineIdx === actualIdx ? (
                               <div
                                 className={`flex items-center space-x-1 font-mono text-xs px-2 py-1.5 rounded border shadow-md whitespace-pre-wrap break-all ${
                                   editingRemarkStartIdx !== null
                                     ? "text-teal-200 bg-teal-950/80 border-teal-500/70"
+                                    : pendingRemarkLineIdx === actualIdx
+                                    ? "text-orange-200 bg-orange-950/80 border-orange-500/70"
                                     : "text-amber-200 bg-amber-950/80 border-amber-500/70"
                                 }`}
                               >
@@ -2392,16 +2422,20 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                                   className={`font-semibold text-[10px] mr-1.5 select-none px-1.5 py-0.5 rounded border ${
                                     editingRemarkStartIdx !== null
                                       ? "text-teal-400 bg-teal-900/60 border-teal-700/60"
+                                      : pendingRemarkLineIdx === actualIdx
+                                      ? "text-orange-400 bg-orange-900/60 border-orange-700/60"
                                       : "text-amber-400 bg-amber-900/60 border-amber-700/60"
                                   }`}
                                 >
-                                  {editingRemarkStartIdx !== null ? "Remark " : ""}Cursor Line #{lineNum}, Col #{(activeColIdx || 0) + 1}
+                                  {editingRemarkStartIdx !== null || pendingRemarkLineIdx === actualIdx ? "Remark " : ""}Cursor Line #{lineNum}, Col #{(activeColIdx || 0) + 1}
                                 </span>
                                 <span>{cleanContent.slice(0, activeColIdx || 0)}</span>
                                 <span
                                   className={`inline-block w-[3px] h-[16px] animate-pulse mx-[1px] align-middle shrink-0 border-r ${
                                     editingRemarkStartIdx !== null
                                       ? "bg-teal-400 shadow-[0_0_10px_#2dd4bf] border-teal-300"
+                                      : pendingRemarkLineIdx === actualIdx
+                                      ? "bg-orange-400 shadow-[0_0_10px_#f97316] border-orange-300"
                                       : "bg-amber-400 shadow-[0_0_10px_#f59e0b] border-amber-300"
                                   }`}
                                 />
@@ -2423,7 +2457,7 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                               </div>
                             ) : null}
 
-                            {!isFreeWritingMode && editingRemarkStartIdx === null && (
+                            {!isFreeWritingMode && editingRemarkStartIdx === null && pendingRemarkLineIdx !== actualIdx && (
                               <div className="flex items-center gap-1.5 w-full">
                                 <span className="text-emerald-400 font-mono font-bold animate-pulse text-sm shrink-0">|</span>
                                 <input
