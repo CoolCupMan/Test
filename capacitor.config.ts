@@ -18,12 +18,12 @@ const config: CapacitorConfig = {
   // editor3dx5, editor3dx6, editor3dx7, editor3dx8, editor3dx9,
   // editor3dx10, editor3dx11, editor3dx12, editor3dx13, editor3dx14,
   // editor3dx15, editor3dx16, editor3dx17, editor3dx18, editor3dx19,
-  // editor3dx20, editor3dx21, or whatever the original binarycore3d2x...
-  // APK used) so this build installs as a separate app instead of
-  // requiring a previous one to be uninstalled first, or failing with an
-  // INSTALL_FAILED_UPDATE_INCOMPATIBLE / signature-mismatch error — all of
-  // them can stay installed side by side.
-  appId: "app.binarycore.editor3dx22",
+  // editor3dx20, editor3dx21, editor3dx22, or whatever the original
+  // binarycore3d2x... APK used) so this build installs as a separate app
+  // instead of requiring a previous one to be uninstalled first, or
+  // failing with an INSTALL_FAILED_UPDATE_INCOMPATIBLE / signature-mismatch
+  // error — all of them can stay installed side by side.
+  appId: "app.binarycore.editor3dx23",
   appName: "binarycore3d3x",
   webDir: "dist",
   server: {
@@ -36,7 +36,7 @@ const config: CapacitorConfig = {
       // Google Cloud Console (see README.md > "Configuring real Google Sign-In").
       // Same value as the VITE_GOOGLE_CLIENT_ID used by the web build. You also
       // need a separate Android-type OAuth client registered with this app's
-      // package name (app.binarycore.editor3dx22) + signing certificate SHA-1 —
+      // package name (app.binarycore.editor3dx23) + signing certificate SHA-1 —
       // Google Play Services matches that automatically, nothing to reference
       // here for it.
       scopes: ["profile", "email"],

@@ -1,4 +1,4 @@
-package app.binarycore.editor3dx22;
+package app.binarycore.editor3dx23;
 
 import android.os.Bundle;
 import android.webkit.WebView;

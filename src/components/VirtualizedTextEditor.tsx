@@ -1875,6 +1875,14 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                           ? darkTheme
                             ? "bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/40 border-b border-slate-800/30"
                             : "bg-amber-50 text-amber-900 ring-1 ring-amber-300 border-b border-slate-300"
+                          : remarkText !== null
+                          ? // A remark keeps a visible orange background wash
+                            // at rest (not just its badge/border) so it jumps
+                            // out immediately while scanning a long document
+                            // full of ordinary messages, from any session.
+                            darkTheme
+                            ? "bg-orange-950/30 hover:bg-orange-900/40 border-b border-orange-800/50"
+                            : "bg-orange-50 hover:bg-orange-100 border-b border-orange-200"
                           : darkTheme
                           ? "hover:bg-slate-900/40 border-b border-slate-800/30"
                           : "hover:bg-slate-200/60 border-b border-slate-200/80 bg-white/80"
@@ -2349,6 +2357,14 @@ export const VirtualizedTextEditor: React.FC<VirtualizedTextEditorProps> = ({
                             ? darkTheme
                               ? "bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/40 border-b border-slate-800/30"
                               : "bg-amber-50 text-amber-900 ring-1 ring-amber-300 border-b border-slate-300"
+                            : remarkText !== null
+                            ? // A remark keeps a visible orange background wash
+                              // at rest (not just its badge/border) so it jumps
+                              // out immediately while scanning a long document
+                              // full of ordinary messages, from any session.
+                              darkTheme
+                              ? "bg-orange-950/30 hover:bg-orange-900/40 border-b border-orange-800/50"
+                              : "bg-orange-50 hover:bg-orange-100 border-b border-orange-200"
                             : darkTheme
                             ? "hover:bg-slate-900/40 border-b border-slate-800/30"
                             : "hover:bg-slate-200/60 border-b border-slate-200/80 bg-white/80"
