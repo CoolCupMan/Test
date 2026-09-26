@@ -14,6 +14,7 @@
 
 const { app, BrowserWindow } = require("electron");
 const path = require("path");
+const fs = require("fs");
 const http = require("http");
 const { spawn } = require("child_process");
 
@@ -24,6 +25,28 @@ const HEALTH_URL = `http://127.0.0.1:${PORT}/api/health`;
 let serverProcess = null;
 let mainWindow = null;
 
+// A GUI-launched app (double-clicked, no console attached) has nowhere
+// visible for the server's own console output to go — this is the only
+// place a startup failure (a crash, a port already in use, a missing
+// dependency) would otherwise show up, and without it a failure here was
+// silently producing nothing but a blank window. Captured in memory (to show
+// inline if startup fails, see showStartupError) and to a log file so it's
+// still findable after the window closes.
+let serverLogPath = null;
+const serverLogLines = [];
+const MAX_LOG_LINES = 200;
+
+function logServerOutput(chunk) {
+  const text = chunk.toString();
+  serverLogLines.push(text);
+  if (serverLogLines.length > MAX_LOG_LINES) serverLogLines.shift();
+  try {
+    fs.appendFileSync(serverLogPath, text);
+  } catch (_) {
+    // Best-effort only — never let logging itself crash startup.
+  }
+}
+
 // Ties this build's Windows taskbar/shortcut identity to the exact Android
 // build (editor3dx24) it was generated from, and keeps it distinct from any
 // other binarycore build (Android or Windows) installed on the same
@@ -31,6 +54,14 @@ let mainWindow = null;
 app.setAppUserModelId("app.binarycore.editor3dx24win");
 
 function startBackendServer() {
+  serverLogPath = path.join(app.getPath("userData"), "server.log");
+  try {
+    fs.writeFileSync(serverLogPath, `binarycore server log — started ${new Date().toISOString()}\n`);
+  } catch (_) {
+    // Non-fatal — the in-memory tail (serverLogLines) still works even if
+    // the log file itself can't be written.
+  }
+
   // dist/server.cjs is a bundled CommonJS script, not an Electron app, so it
   // must run under a plain Node.js runtime rather than relaunching Electron
   // itself. Spawning Electron's own executable with ELECTRON_RUN_AS_NODE=1
@@ -41,12 +72,21 @@ function startBackendServer() {
   serverProcess = spawn(process.execPath, [serverPath], {
     cwd: path.join(__dirname, ".."),
     env: { ...process.env, NODE_ENV: "production", ELECTRON_RUN_AS_NODE: "1" },
-    stdio: "inherit",
+    stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
 
+  serverProcess.stdout.on("data", logServerOutput);
+  serverProcess.stderr.on("data", logServerOutput);
+
   serverProcess.on("error", (err) => {
-    console.error("Failed to start binarycore server:", err);
+    logServerOutput(`\n[electron] Failed to spawn the server process: ${err && err.stack ? err.stack : err}\n`);
+  });
+
+  serverProcess.on("exit", (code, signal) => {
+    if (code !== 0 && code !== null) {
+      logServerOutput(`\n[electron] Server process exited early with code ${code} (signal ${signal || "none"})\n`);
+    }
   });
 }
 
@@ -70,6 +110,36 @@ function waitForServer(url, timeoutMs = 20000) {
   });
 }
 
+// Shown instead of a bare blank/browser-error page when the local server
+// never came up in time — an actual explanation plus the tail of its own
+// log, so a startup problem is visible and reportable instead of silent.
+function showStartupError(err) {
+  const escapeHtml = (s) =>
+    String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const logTail = escapeHtml(serverLogLines.join("").trim() || "(no output captured)");
+  const html = `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>binarycore3d3x</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; background: #14181f; color: #e6e9ef; margin: 0; padding: 32px; }
+  h1 { font-size: 18px; color: #f59e0b; }
+  p { line-height: 1.5; }
+  pre { background: #0b0e13; border: 1px solid #2a2f3a; border-radius: 6px; padding: 12px; white-space: pre-wrap;
+        word-break: break-word; max-height: 50vh; overflow-y: auto; font-size: 12px; color: #9fd0ff; }
+  code { background: #232833; padding: 2px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+  <h1>binarycore3d3x couldn't start its local server</h1>
+  <p>${escapeHtml(err && err.message ? err.message : String(err))}</p>
+  <p>Full log saved to: <code>${escapeHtml(serverLogPath || "")}</code></p>
+  <p>Recent server output:</p>
+  <pre>${logTail}</pre>
+</body>
+</html>`;
+  mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+}
+
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -85,20 +155,16 @@ async function createWindow() {
     },
   });
 
-  try {
-    await waitForServer(HEALTH_URL);
-  } catch (err) {
-    // Fall through and try to load anyway — a slow first start is better
-    // shown as the app's own "can't reach server" state (already handled by
-    // the existing web UI, see src/lib/apiBase.ts) than a blank Electron
-    // window with no explanation.
-    console.error(err);
-  }
-
-  mainWindow.loadURL(SERVER_URL);
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  try {
+    await waitForServer(HEALTH_URL);
+    mainWindow.loadURL(SERVER_URL);
+  } catch (err) {
+    showStartupError(err);
+  }
 }
 
 function stopBackendServer() {

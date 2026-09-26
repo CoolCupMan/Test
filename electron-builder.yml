@@ -8,6 +8,16 @@
 appId: app.binarycore.editor3dx24win
 productName: binarycore3d3x-editor3dx24
 
+# Packed as a plain unpacked folder, NOT an .asar archive. This app spawns
+# dist/server.cjs as its own Node child process (see electron/main.cjs) —
+# asar's virtual filesystem is only transparently readable from INSIDE
+# Electron's own patched runtime, and common packaging gotchas around
+# requiring node_modules (express/vite/the AI SDKs, none of which are
+# asar-aware) from a spawned script living inside an .asar are exactly the
+# kind of silent failure that shows up as this app's whole window staying
+# blank with no visible error. Not worth the smaller install size.
+asar: false
+
 # This workflow publishes the built .exe itself (as a GitHub Release asset,
 # via `gh release` in a separate step) — electron-builder's own built-in
 # publishing must stay off, or it auto-detects the CI environment and tries
