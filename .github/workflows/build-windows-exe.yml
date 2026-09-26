@@ -60,7 +60,7 @@ jobs:
           npm run build
 
       - name: Build Windows installer (.exe)
-        run: npx electron-builder --win nsis --config electron-builder.yml
+        run: npx electron-builder --win nsis --publish never --config electron-builder.yml
 
       - name: Locate installer
         shell: bash

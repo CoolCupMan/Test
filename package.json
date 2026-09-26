@@ -12,7 +12,7 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.cjs",
     "lint": "tsc --noEmit",
-    "electron:build": "electron-builder --win nsis --config electron-builder.yml"
+    "electron:build": "electron-builder --win nsis --publish never --config electron-builder.yml"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -39,7 +39,7 @@
     "@types/react-dom": "^19.2.4",
     "autoprefixer": "^10.4.21",
     "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "^26.17.0",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
