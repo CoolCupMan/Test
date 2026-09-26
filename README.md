@@ -109,13 +109,18 @@ locally.
 
 ## Building the Windows installer (.exe)
 
-The same app (the web assets in `dist/` plus `dist/server.cjs`, the exact
-production server used above — see **Why `VITE_API_BASE_URL` matters**) is
-also packaged as a native Windows desktop app via Electron
-(`electron/main.cjs`), so every feature that needs that server — including
-`/api/ai/analyze` and `/api/auth/verify-key` — works out of the box, with no
-`VITE_API_BASE_URL` needed: the installed app runs its own local copy of the
-server and just points its window at it.
+The same web assets (`dist/`, from `npx vite build`) are also packaged as a
+native Windows desktop app via Electron (`electron/main.cjs`) — with no
+server and no network stack at all, exactly like the Android build: it's a
+static WebView-style shell that serves `dist/` straight off disk through
+Electron's own in-process protocol handler (no `file://`, which would break
+the app's ES module scripts — see the comment at the top of
+`electron/main.cjs`), never opening a socket or port. So it has the exact
+same server-dependent limitation the Android build already has — see **Why
+`VITE_API_BASE_URL` matters for the packaged app** above: `/api/ai/analyze`
+and `/api/auth/verify-key` need `VITE_API_BASE_URL` pointed at a separately
+hosted deployment of this repo's server to work; everything else (the editor,
+Local AI, etc.) works fully offline regardless.
 
 1. Push to this repo (or run manually) to trigger
    **.github/workflows/build-windows-exe.yml** (needs a `windows-latest`
@@ -131,8 +136,8 @@ It's an **unsigned** installer, so Windows SmartScreen will warn on first run
 ### Local Electron commands
 
 ```sh
-npm run build           # vite build + bundles server.ts into dist/server.cjs
-npm run electron:build  # packages dist/ + electron/ into a Windows .exe via electron-builder
+npx vite build           # just the web assets the Windows build needs
+npm run electron:build   # packages dist/ + electron/ into a Windows .exe via electron-builder
 ```
 
 `electron-builder.yml`'s `appId`/`productName` are their own track, separate

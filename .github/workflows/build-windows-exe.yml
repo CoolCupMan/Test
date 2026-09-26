@@ -1,12 +1,11 @@
 name: Build Windows EXE
 
-# Packages the exact same app as the Android build (dist/ web assets +
-# dist/server.cjs, the same production server that already serves the AI
-# analyze / API-key-verify endpoints for the web build) into a native
-# Windows installer via Electron. Runs on windows-latest for the same
-# reason the Android workflow runs on ubuntu-latest: a real Windows/NSIS
-# toolchain is what a GitHub-hosted Windows runner has, and this sandbox
-# doesn't.
+# Packages the exact same web assets as the Android build (dist/, via
+# `npx vite build`) into a native Windows installer via Electron — no local
+# server, same as the Android WebView shell doesn't have one either. Runs on
+# windows-latest for the same reason the Android workflow runs on
+# ubuntu-latest: a real Windows/NSIS toolchain is what a GitHub-hosted
+# Windows runner has, and this sandbox doesn't.
 on:
   workflow_dispatch: {}
   push:
@@ -15,9 +14,9 @@ on:
       - "main"
     paths:
       - "src/**"
-      - "server.ts"
       - "electron/**"
       - "electron-builder.yml"
+      - "vite.config.ts"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/build-windows-exe.yml"
@@ -48,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web assets and server bundle
+      - name: Build web assets
         shell: bash
         env:
           # Same optional secrets/variables as the Android build — safe to
@@ -57,7 +56,7 @@ jobs:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
         run: |
           export VITE_APP_VERSION="$(git rev-list --count HEAD)"
-          npm run build
+          npx vite build
 
       - name: Build Windows installer (.exe)
         run: npx electron-builder --win nsis --publish never --config electron-builder.yml
