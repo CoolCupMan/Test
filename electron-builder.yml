@@ -8,6 +8,13 @@
 appId: app.binarycore.editor3dx24win
 productName: binarycore3d3x-editor3dx24
 
+# This workflow publishes the built .exe itself (as a GitHub Release asset,
+# via `gh release` in a separate step) — electron-builder's own built-in
+# publishing must stay off, or it auto-detects the CI environment and tries
+# to publish on its own, which fails outright with no GH_TOKEN set for this
+# step (and would otherwise be a second, redundant/conflicting publish path).
+publish: never
+
 directories:
   # NOT "dist" — that's already the Vite web build + bundled server output
   # (dist/server.cjs) that this packages AS INPUT, so electron-builder's own
