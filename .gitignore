@@ -7,6 +7,9 @@ coverage/
 .env*
 !.env.example
 
+# electron-builder output (Windows .exe build)
+release/
+
 # Android (Capacitor) — keep the native project source, ignore generated/build output
 android/local.properties
 android/.gradle/

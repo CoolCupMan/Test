@@ -106,3 +106,36 @@ npx cap sync android    # copy web assets + native plugins into android/
 
 Opening `android/` in Android Studio also works if you have the SDK installed
 locally.
+
+## Building the Windows installer (.exe)
+
+The same app (the web assets in `dist/` plus `dist/server.cjs`, the exact
+production server used above — see **Why `VITE_API_BASE_URL` matters**) is
+also packaged as a native Windows desktop app via Electron
+(`electron/main.cjs`), so every feature that needs that server — including
+`/api/ai/analyze` and `/api/auth/verify-key` — works out of the box, with no
+`VITE_API_BASE_URL` needed: the installed app runs its own local copy of the
+server and just points its window at it.
+
+1. Push to this repo (or run manually) to trigger
+   **.github/workflows/build-windows-exe.yml** (needs a `windows-latest`
+   runner for a real NSIS toolchain, the same reason the APK build needs an
+   Ubuntu runner with the Android SDK).
+2. Download the `binarycore3d3x-windows-exe` artifact from the workflow run,
+   or the rolling release asset — see the top-level project notes for the
+   current download link.
+
+It's an **unsigned** installer, so Windows SmartScreen will warn on first run
+— click "More info", then "Run anyway".
+
+### Local Electron commands
+
+```sh
+npm run build           # vite build + bundles server.ts into dist/server.cjs
+npm run electron:build  # packages dist/ + electron/ into a Windows .exe via electron-builder
+```
+
+`electron-builder.yml`'s `appId`/`productName` are their own track, separate
+from the Android app ids above, so this can be installed side by side with
+any Android build (or a future re-packaged Windows build) without either one
+needing to be uninstalled first.

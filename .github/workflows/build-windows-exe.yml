@@ -1,0 +1,100 @@
+name: Build Windows EXE
+
+# Packages the exact same app as the Android build (dist/ web assets +
+# dist/server.cjs, the same production server that already serves the AI
+# analyze / API-key-verify endpoints for the web build) into a native
+# Windows installer via Electron. Runs on windows-latest for the same
+# reason the Android workflow runs on ubuntu-latest: a real Windows/NSIS
+# toolchain is what a GitHub-hosted Windows runner has, and this sandbox
+# doesn't.
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - "claude/**"
+      - "main"
+    paths:
+      - "src/**"
+      - "server.ts"
+      - "electron/**"
+      - "electron-builder.yml"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/build-windows-exe.yml"
+
+# Needed to create/update the release in the "Publish" step below.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history (not the default shallow clone), needed so the
+          # version number (git rev-list --count) reflects the real, total
+          # iteration count of the app's source history rather than just "1"
+          # from a shallow checkout — same as the Android workflow.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets and server bundle
+        shell: bash
+        env:
+          # Same optional secrets/variables as the Android build — safe to
+          # leave unset.
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: |
+          export VITE_APP_VERSION="$(git rev-list --count HEAD)"
+          npm run build
+
+      - name: Build Windows installer (.exe)
+        run: npx electron-builder --win nsis --config electron-builder.yml
+
+      - name: Locate installer
+        shell: bash
+        run: |
+          mkdir -p out
+          cp release/*.exe out/binarycore3d3x-windows-setup.exe
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binarycore3d3x-windows-exe
+          path: out/binarycore3d3x-windows-setup.exe
+          retention-days: 30
+
+      # Same rationale as the Android workflow's release step: a raw,
+      # directly-downloadable file at a stable URL, no GitHub login or zip
+      # wrapper required — https://github.com/<owner>/<repo>/releases/download/windows-exe-latest/binarycore3d3x-windows-setup.exe
+      - name: Publish to rolling "latest Windows build" release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="windows-exe-latest"
+          NOTES="Latest Windows build — commit ${GITHUB_SHA::7}, built $(date -u +'%Y-%m-%d %H:%M UTC').
+
+          Windows installer (.exe) for the same binarycore3d3x app as the Android build (editor3dx24), packaged with Electron. Unsigned installer -- Windows SmartScreen may warn on first run (click More info, then Run anyway)."
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/binarycore3d3x-windows-setup.exe --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "binarycore3d3x (latest Windows build)" --notes "$NOTES"
+          else
+            gh release create "$TAG" out/binarycore3d3x-windows-setup.exe \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "binarycore3d3x (latest Windows build)" \
+              --notes "$NOTES" \
+              --prerelease
+          fi

@@ -1,0 +1,34 @@
+# electron-builder config for the Windows build of binarycore3d3x.
+#
+# Deliberately its own appId/productName track, separate from the Android
+# app ids in capacitor.config.ts (app.binarycore.editor3dxN) — this is the
+# Windows counterpart of Android build editor3dx24, so it can install (and
+# later be re-bumped) side by side with any other binarycore build on the
+# same machine without colliding.
+appId: app.binarycore.editor3dx24win
+productName: binarycore3d3x-editor3dx24
+
+directories:
+  # NOT "dist" — that's already the Vite web build + bundled server output
+  # (dist/server.cjs) that this packages AS INPUT, so electron-builder's own
+  # output has to live somewhere else or it would collide with it.
+  output: release
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: binarycore3d3x (editor3dx24)
